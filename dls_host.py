@@ -10,7 +10,7 @@ import re
 
 # --- CONFIGURATION ---
 st.set_page_config(
-    page_title="DLS Ultra Manager", 
+    page_title="Dream League Soccer Tournament", 
     page_icon="⚽", 
     layout="wide", 
     initial_sidebar_state="collapsed"
@@ -342,7 +342,7 @@ if 'init' not in st.session_state:
     st.session_state.init = True
 
 # --- 🏆 HEADER ---
-st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
+st.markdown('<div class="big-title">DLS26 TOURNAMENT</div>', unsafe_allow_html=True)
 if st.session_state.champion:
     st.markdown(f'<div class="subtitle" style="color:#FFD700">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
 else:
@@ -663,4 +663,5 @@ st.markdown("""
     WRITTEN AND DESIGNED BY <span class="designer-name">OLUWATIMILEYIN IGBINLOLA</span>
 </div>
 """, unsafe_allow_html=True)
+
 
