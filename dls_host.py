@@ -33,6 +33,29 @@ st.markdown("""
         text-align: center; font-size: 1.5em; font-weight: bold; color: #fff;
     }
     .stNumberInput input { background-color: #2a3942; color: white; border: 1px solid #25d366; }
+
+    /* FOOTER SIGNATURE */
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #0b141a;
+        color: #888;
+        text-align: center;
+        padding: 10px;
+        font-size: 0.8em;
+        border-top: 1px solid #202c33;
+        z-index: 100;
+    }
+    .main-footer {
+        margin-top: 50px;
+        padding: 20px;
+        text-align: center;
+        color: #555;
+        font-size: 0.9em;
+        border-top: 1px solid #333;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -141,6 +164,10 @@ with st.sidebar:
             if os.path.exists(DB_FILE):
                 os.remove(DB_FILE)
             st.rerun()
+            
+    # --- SIDEBAR FOOTER ---
+    st.markdown("---")
+    st.caption("Written and Designed by **OLUWATIMILEYIN IGBINLOLA**")
 
 # --- MAIN PAGE ---
 st.title("🛡️ DLS Tournament Live")
@@ -227,3 +254,11 @@ else:
                         # VIEWER: Read Only
                         c2.markdown(f"<div class='score-box'>{res[0]}</div>", unsafe_allow_html=True)
                         c4.markdown(f"<div class='score-box'>{res[1]}</div>", unsafe_allow_html=True)
+
+# --- MAIN PAGE FOOTER ---
+st.markdown("""
+<div class="main-footer">
+    Written and Designed by <br> 
+    <span style="color: #25d366; font-weight: bold; font-size: 1.2em;">OLUWATIMILEYIN IGBINLOLA</span>
+</div>
+""", unsafe_allow_html=True)
