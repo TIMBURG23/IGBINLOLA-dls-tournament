@@ -350,9 +350,9 @@ else:
 
 # --- 🔒 SIDEBAR (ADMIN) ---
 with st.sidebar:
-    st.markdown("### 🔐 MANAGER ACCESS")
+    st.markdown("### 🔐 Oluwatimileyin and Bob ACCESS")
     pin = st.text_input("ENTER PIN", type="password")
-    if pin == "1234": 
+    if pin == "0209": 
         st.session_state.is_admin = True
         st.success("ACCESS GRANTED")
     else: 
@@ -663,3 +663,4 @@ st.markdown("""
     WRITTEN AND DESIGNED BY <span class="designer-name">OLUWATIMILEYIN IGBINLOLA</span>
 </div>
 """, unsafe_allow_html=True)
+
