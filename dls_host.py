@@ -9,7 +9,7 @@ import re
 # --- CONFIGURATION ---
 st.set_page_config(page_title="DLS Ultra Manager", page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS STYLING (Classic Dark) ---
+# --- CSS STYLING ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&family=Rajdhani:wght@500;700&display=swap');
@@ -53,7 +53,8 @@ def init_defaults():
         'teams': [], 'format': 'League', 'current_round': 'Group Stage',
         'fixtures': [], 'results': {}, 'match_meta': {},
         'started': False, 'groups': {}, 'champion': None, 'active_teams': [], 
-        'is_admin': False, 'team_badges': {}, 'news': []
+        'is_admin': False, 'team_badges': {}, 'news': [], 
+        'legacy_stats': {} 
     }
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
@@ -76,30 +77,71 @@ def load_data():
                 st.session_state.team_badges = data.get("team_badges", {})
                 st.session_state.news = data.get("news", [])
                 
+                loaded_p_stats = data.get("player_stats", {})
+                loaded_legacy = data.get("legacy_stats", {})
+                
+                if loaded_legacy:
+                    st.session_state.legacy_stats = loaded_legacy
+                elif loaded_p_stats and not st.session_state.match_meta:
+                    st.session_state.legacy_stats = loaded_p_stats
+                else:
+                    st.session_state.legacy_stats = {}
+
                 for t in st.session_state.teams:
                     if t not in st.session_state.team_badges:
                         st.session_state.team_badges[t] = random.choice(BADGE_POOL)
         except: init_defaults()
     else: init_defaults()
 
-def save_data():
+def save_data_internal(current_stats):
+    # Helper to save safely
+    # Convert tuple keys in stats to strings for JSON compatibility
+    safe_stats = {}
+    if current_stats:
+        for k, v in current_stats.items():
+            safe_stats[str(k)] = v
+
     data = {
         "teams": st.session_state.teams, "format": st.session_state.format,
         "current_round": st.session_state.current_round, "fixtures": st.session_state.fixtures,
         "results": st.session_state.results, "match_meta": st.session_state.match_meta,
         "started": st.session_state.started, "groups": st.session_state.groups,
         "champion": st.session_state.champion, "active_teams": st.session_state.active_teams,
-        "team_badges": st.session_state.team_badges, "news": st.session_state.news
+        "team_badges": st.session_state.team_badges, "news": st.session_state.news,
+        "legacy_stats": st.session_state.legacy_stats, 
+        "player_stats": safe_stats # Save the stringified version
     }
     with open(DB_FILE, "w") as f: json.dump(data, f)
 
-# --- 🧠 RECALCULATION ENGINE (PURE) ---
+# --- 🧠 HYBRID RECALCULATION ENGINE ---
 def recalculate_stats():
-    # 1. Reset everything to clean slate
     t_stats = {t: {'P':0, 'W':0, 'D':0, 'L':0, 'GF':0, 'GA':0, 'GD':0, 'Pts':0, 'Form': []} for t in st.session_state.teams}
     p_stats = {} 
 
-    # 2. Replay history strictly from Saved Matches
+    # 2. LOAD LEGACY BASELINE
+    if 'legacy_stats' in st.session_state:
+        for key, s in st.session_state.legacy_stats.items():
+            name = key
+            team = "Unknown"
+            
+            # Key Parsing for old formats
+            if "('" in key:
+                try:
+                    clean = key.replace("('", "").replace("')", "").replace("', '", "|")
+                    name, team = clean.split("|")
+                except: pass
+            elif isinstance(s, dict) and 'Team' in s:
+                team = s['Team']
+            
+            uid = (name, team)
+            if uid not in p_stats: p_stats[uid] = {'G':0, 'A':0, 'R':0}
+            
+            if isinstance(s, dict):
+                p_stats[uid]['G'] += s.get('G', 0)
+                p_stats[uid]['A'] += s.get('A', 0)
+                p_stats[uid]['R'] += s.get('R', 0)
+
+    # 3. ADD LIVE MATCH REPORTS
     for mid, res in st.session_state.results.items():
         try:
             h, a = mid.split('v')
@@ -109,7 +151,6 @@ def recalculate_stats():
 
         s_h, s_a = res[0], res[1]
         
-        # Team Stats
         t_stats[h]['P'] += 1; t_stats[a]['P'] += 1
         t_stats[h]['GF'] += s_h; t_stats[h]['GA'] += s_a; t_stats[h]['GD'] += (s_h - s_a)
         t_stats[a]['GF'] += s_a; t_stats[a]['GA'] += s_h; t_stats[a]['GD'] += (s_a - s_h)
@@ -124,9 +165,8 @@ def recalculate_stats():
             t_stats[h]['D'] += 1; t_stats[h]['Pts'] += 1; t_stats[a]['D'] += 1; t_stats[a]['Pts'] += 1
             t_stats[h]['Form'].append('D'); t_stats[a]['Form'].append('D')
 
-        # Player Stats (From Reports)
+        # Live Player Stats
         meta = st.session_state.match_meta.get(mid, {})
-        
         def process_player_string(raw_str, team, stat_type):
             if not raw_str: return
             parts = raw_str.split(',')
@@ -165,7 +205,7 @@ st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
 if st.session_state.champion:
     st.markdown(f'<div class="subtitle" style="color:#FFD700">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
 else:
-    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V12.0</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V13.1</div>', unsafe_allow_html=True)
 
 # --- 🔒 SIDEBAR ---
 with st.sidebar:
@@ -211,7 +251,7 @@ with st.sidebar:
                                 if i+1 < len(rem): nxt.append((rem[i], rem[i+1]))
                             st.session_state.current_round = f"Round of {len(rem)}"
                         st.session_state.fixtures = nxt; st.session_state.results = {}; st.session_state.match_meta = {}
-                        save_data(); st.rerun()
+                        save_data_internal(current_player_stats); st.rerun()
                 else: 
                     wins = []
                     for h, a in st.session_state.fixtures:
@@ -230,7 +270,7 @@ with st.sidebar:
                             if i+1 < len(wins): nxt.append((wins[i], wins[i+1]))
                         st.session_state.fixtures = nxt; st.session_state.results = {}; st.session_state.match_meta = {}
                         st.session_state.current_round = "NEXT ROUND"
-                    save_data(); st.rerun()
+                    save_data_internal(current_player_stats); st.rerun()
 
         st.markdown("---")
         st.markdown("### ⚙️ TEAM EDITOR")
@@ -239,32 +279,40 @@ with st.sidebar:
             if new_team and new_team not in st.session_state.teams:
                 st.session_state.teams.append(new_team)
                 st.session_state.team_badges[new_team] = random.choice(BADGE_POOL)
-                save_data(); st.rerun()
+                save_data_internal(current_player_stats); st.rerun()
 
         edit_target = st.selectbox("SELECT CLUB", ["Select..."] + st.session_state.teams)
         if edit_target != "Select...":
             c1, c2 = st.columns(2)
             if c1.button("🗑️ DELETE"):
                 st.session_state.teams.remove(edit_target)
-                save_data(); st.rerun()
+                save_data_internal(current_player_stats); st.rerun()
             rename_val = c2.text_input("RENAME TO", value=edit_target)
             if c2.button("RENAME"):
                 idx = st.session_state.teams.index(edit_target)
                 st.session_state.teams[idx] = rename_val
                 st.session_state.team_badges[rename_val] = st.session_state.team_badges.pop(edit_target)
-                save_data(); st.rerun()
+                save_data_internal(current_player_stats); st.rerun()
 
         st.markdown("---")
         st.markdown("### 💾 DATA MANAGEMENT")
+        
+        # Safe Export Logic
+        safe_export_stats = {}
+        for k, v in current_player_stats.items():
+            safe_export_stats[str(k)] = v
+            
         current_data = json.dumps({
             "teams": st.session_state.teams, "format": st.session_state.format, 
             "current_round": st.session_state.current_round, "fixtures": st.session_state.fixtures, 
             "results": st.session_state.results, "match_meta": st.session_state.match_meta, 
             "started": st.session_state.started, "groups": st.session_state.groups, 
             "champion": st.session_state.champion, "active_teams": st.session_state.active_teams, 
-            "team_badges": st.session_state.team_badges, "news": st.session_state.news
+            "team_badges": st.session_state.team_badges, "news": st.session_state.news,
+            "legacy_stats": st.session_state.legacy_stats, "player_stats": safe_export_stats
         })
         st.download_button("📥 DOWNLOAD BACKUP", data=current_data, file_name="dls_backup.json", mime="application/json")
+        
         uploaded = st.file_uploader("📤 RESTORE BACKUP", type=['json'])
         if uploaded and st.button("⚠️ RESTORE NOW"):
             data = json.load(uploaded)
@@ -279,7 +327,9 @@ with st.sidebar:
             st.session_state.active_teams = data.get("active_teams", [])
             st.session_state.team_badges = data.get("team_badges", {})
             st.session_state.news = data.get("news", [])
-            save_data(); st.rerun()
+            # Load legacy safely
+            st.session_state.legacy_stats = data.get("legacy_stats", data.get("player_stats", {}))
+            save_data_internal(current_player_stats); st.rerun()
         if st.button("🧨 FACTORY RESET"):
             st.session_state.clear()
             if os.path.exists(DB_FILE): os.remove(DB_FILE)
@@ -319,7 +369,7 @@ if not st.session_state.started:
                         if i+1 < len(shuffled): matches.append((shuffled[i], shuffled[i+1]))
                 st.session_state.fixtures = matches
                 st.session_state.started = True
-                save_data(); st.rerun()
+                save_data_internal(current_player_stats); st.rerun()
 
 else:
     tab1, tab2, tab3 = st.tabs(["📊 STANDINGS", "⚽ MATCH CENTER", "⭐ STATS"])
@@ -382,7 +432,6 @@ else:
                             p2 = ac2.number_input(f"P {a}", 0, 20, key=f"p2_{mid}")
 
                         sc1, sc2 = st.columns(2)
-                        # PRE-FILL existing data if available to avoid typing again
                         prev = st.session_state.match_meta.get(mid, {})
                         
                         gs1 = sc1.text_input("Scorers (Home)", value=prev.get('h_s',''), key=f"g1_{mid}", placeholder="Messi (2), ...")
@@ -403,7 +452,7 @@ else:
                                 'h_s': gs1, 'a_s': gs2,
                                 'h_a': ha, 'a_a': aa, 'h_r': hr, 'a_r': ar
                             }
-                            save_data(); st.success("UPDATED"); st.rerun()
+                            save_data_internal(current_player_stats); st.success("UPDATED"); st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
