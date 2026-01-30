@@ -94,8 +94,6 @@ def load_data():
     else: init_defaults()
 
 def save_data_internal(current_stats):
-    # Helper to save safely
-    # Convert tuple keys in stats to strings for JSON compatibility
     safe_stats = {}
     if current_stats:
         for k, v in current_stats.items():
@@ -109,7 +107,7 @@ def save_data_internal(current_stats):
         "champion": st.session_state.champion, "active_teams": st.session_state.active_teams,
         "team_badges": st.session_state.team_badges, "news": st.session_state.news,
         "legacy_stats": st.session_state.legacy_stats, 
-        "player_stats": safe_stats # Save the stringified version
+        "player_stats": safe_stats
     }
     with open(DB_FILE, "w") as f: json.dump(data, f)
 
@@ -118,13 +116,10 @@ def recalculate_stats():
     t_stats = {t: {'P':0, 'W':0, 'D':0, 'L':0, 'GF':0, 'GA':0, 'GD':0, 'Pts':0, 'Form': []} for t in st.session_state.teams}
     p_stats = {} 
 
-    # 2. LOAD LEGACY BASELINE
     if 'legacy_stats' in st.session_state:
         for key, s in st.session_state.legacy_stats.items():
             name = key
             team = "Unknown"
-            
-            # Key Parsing for old formats
             if "('" in key:
                 try:
                     clean = key.replace("('", "").replace("')", "").replace("', '", "|")
@@ -135,13 +130,11 @@ def recalculate_stats():
             
             uid = (name, team)
             if uid not in p_stats: p_stats[uid] = {'G':0, 'A':0, 'R':0}
-            
             if isinstance(s, dict):
                 p_stats[uid]['G'] += s.get('G', 0)
                 p_stats[uid]['A'] += s.get('A', 0)
                 p_stats[uid]['R'] += s.get('R', 0)
 
-    # 3. ADD LIVE MATCH REPORTS
     for mid, res in st.session_state.results.items():
         try:
             h, a = mid.split('v')
@@ -165,7 +158,6 @@ def recalculate_stats():
             t_stats[h]['D'] += 1; t_stats[h]['Pts'] += 1; t_stats[a]['D'] += 1; t_stats[a]['Pts'] += 1
             t_stats[h]['Form'].append('D'); t_stats[a]['Form'].append('D')
 
-        # Live Player Stats
         meta = st.session_state.match_meta.get(mid, {})
         def process_player_string(raw_str, team, stat_type):
             if not raw_str: return
@@ -205,7 +197,7 @@ st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
 if st.session_state.champion:
     st.markdown(f'<div class="subtitle" style="color:#FFD700">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
 else:
-    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V13.1</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V14.1</div>', unsafe_allow_html=True)
 
 # --- 🔒 SIDEBAR ---
 with st.sidebar:
@@ -275,10 +267,24 @@ with st.sidebar:
         st.markdown("---")
         st.markdown("### ⚙️ TEAM EDITOR")
         new_team = st.text_input("REGISTER NEW CLUB")
+        
         if st.button("ADD CLUB"):
             if new_team and new_team not in st.session_state.teams:
                 st.session_state.teams.append(new_team)
                 st.session_state.team_badges[new_team] = random.choice(BADGE_POOL)
+                if st.session_state.started:
+                    st.session_state.active_teams.append(new_team)
+                    if "League" in st.session_state.format:
+                        new_matches = []
+                        others = [t for t in st.session_state.teams if t != new_team]
+                        for opp in others:
+                            new_matches.append((new_team, opp))
+                            new_matches.append((opp, new_team))
+                        random.shuffle(new_matches)
+                        st.session_state.fixtures.extend(new_matches)
+                        st.toast(f"✅ {new_team} joined! {len(new_matches)} matches generated.")
+                    else:
+                        st.toast(f"✅ {new_team} joined! Will play next round.")
                 save_data_internal(current_player_stats); st.rerun()
 
         edit_target = st.selectbox("SELECT CLUB", ["Select..."] + st.session_state.teams)
@@ -286,6 +292,7 @@ with st.sidebar:
             c1, c2 = st.columns(2)
             if c1.button("🗑️ DELETE"):
                 st.session_state.teams.remove(edit_target)
+                if edit_target in st.session_state.active_teams: st.session_state.active_teams.remove(edit_target)
                 save_data_internal(current_player_stats); st.rerun()
             rename_val = c2.text_input("RENAME TO", value=edit_target)
             if c2.button("RENAME"):
@@ -297,7 +304,6 @@ with st.sidebar:
         st.markdown("---")
         st.markdown("### 💾 DATA MANAGEMENT")
         
-        # Safe Export Logic
         safe_export_stats = {}
         for k, v in current_player_stats.items():
             safe_export_stats[str(k)] = v
@@ -312,7 +318,6 @@ with st.sidebar:
             "legacy_stats": st.session_state.legacy_stats, "player_stats": safe_export_stats
         })
         st.download_button("📥 DOWNLOAD BACKUP", data=current_data, file_name="dls_backup.json", mime="application/json")
-        
         uploaded = st.file_uploader("📤 RESTORE BACKUP", type=['json'])
         if uploaded and st.button("⚠️ RESTORE NOW"):
             data = json.load(uploaded)
@@ -327,7 +332,6 @@ with st.sidebar:
             st.session_state.active_teams = data.get("active_teams", [])
             st.session_state.team_badges = data.get("team_badges", {})
             st.session_state.news = data.get("news", [])
-            # Load legacy safely
             st.session_state.legacy_stats = data.get("legacy_stats", data.get("player_stats", {}))
             save_data_internal(current_player_stats); st.rerun()
         if st.button("🧨 FACTORY RESET"):
@@ -404,7 +408,7 @@ else:
 
     with tab2:
         filter_team = st.selectbox("FILTER TEAM", ["All"] + st.session_state.teams)
-        for h, a in st.session_state.fixtures:
+        for i, (h, a) in enumerate(st.session_state.fixtures): # UPDATED FOR UNIQUE KEY
             if filter_team != "All" and filter_team not in [h, a]: continue
             mid = f"{h}v{a}"; res = st.session_state.results.get(mid)
             
@@ -421,37 +425,31 @@ else:
                 c3.markdown(f"<h3 style='text-align:left'>{b2} {a}</h3>", unsafe_allow_html=True)
                 
                 if st.session_state.is_admin and not st.session_state.champion:
-                    with st.expander("📝 REPORT"):
+                    with st.expander(f"📝 REPORT MATCH {i+1}"):
                         ac1, ac2 = st.columns(2)
-                        s1 = ac1.number_input(f"{h}", 0, 20, key=f"s1_{mid}")
-                        s2 = ac2.number_input(f"{a}", 0, 20, key=f"s2_{mid}")
+                        s1 = ac1.number_input(f"{h}", 0, 20, key=f"s1_{mid}_{i}") # UNIQUE KEY
+                        s2 = ac2.number_input(f"{a}", 0, 20, key=f"s2_{mid}_{i}") # UNIQUE KEY
                         p1, p2 = 0, 0
                         if s1 == s2 and "League" not in st.session_state.format:
                             st.caption("Penalties")
-                            p1 = ac1.number_input(f"P {h}", 0, 20, key=f"p1_{mid}")
-                            p2 = ac2.number_input(f"P {a}", 0, 20, key=f"p2_{mid}")
+                            p1 = ac1.number_input(f"P {h}", 0, 20, key=f"p1_{mid}_{i}")
+                            p2 = ac2.number_input(f"P {a}", 0, 20, key=f"p2_{mid}_{i}")
 
                         sc1, sc2 = st.columns(2)
                         prev = st.session_state.match_meta.get(mid, {})
+                        gs1 = sc1.text_input("Scorers (Home)", value=prev.get('h_s',''), key=f"g1_{mid}_{i}", placeholder="Messi (2), ...")
+                        gs2 = sc2.text_input("Scorers (Away)", value=prev.get('a_s',''), key=f"g2_{mid}_{i}")
+                        ha = sc1.text_input("Ast H", value=prev.get('h_a',''), key=f"ah_{mid}_{i}")
+                        aa = sc2.text_input("Ast A", value=prev.get('a_a',''), key=f"aa_{mid}_{i}")
+                        hr = sc1.text_input("Red H", value=prev.get('h_r',''), key=f"rh_{mid}_{i}")
+                        ar = sc2.text_input("Red A", value=prev.get('a_r',''), key=f"ra_{mid}_{i}")
                         
-                        gs1 = sc1.text_input("Scorers (Home)", value=prev.get('h_s',''), key=f"g1_{mid}", placeholder="Messi (2), ...")
-                        gs2 = sc2.text_input("Scorers (Away)", value=prev.get('a_s',''), key=f"g2_{mid}")
-                        
-                        ha = sc1.text_input("Ast H", value=prev.get('h_a',''), key=f"ah_{mid}")
-                        aa = sc2.text_input("Ast A", value=prev.get('a_a',''), key=f"aa_{mid}")
-                        hr = sc1.text_input("Red H", value=prev.get('h_r',''), key=f"rh_{mid}")
-                        ar = sc2.text_input("Red A", value=prev.get('a_r',''), key=f"ra_{mid}")
-                        
-                        if st.button("CONFIRM RESULT", key=f"b_{mid}"):
+                        if st.button("CONFIRM RESULT", key=f"b_{mid}_{i}"):
                             if s1 == s2 and "League" not in st.session_state.format:
                                 st.session_state.results[mid] = [s1, s2, p1, p2]
                             else:
                                 st.session_state.results[mid] = [s1, s2]
-                            
-                            st.session_state.match_meta[mid] = {
-                                'h_s': gs1, 'a_s': gs2,
-                                'h_a': ha, 'a_a': aa, 'h_r': hr, 'a_r': ar
-                            }
+                            st.session_state.match_meta[mid] = {'h_s': gs1, 'a_s': gs2, 'h_a': ha, 'a_a': aa, 'h_r': hr, 'a_r': ar}
                             save_data_internal(current_player_stats); st.success("UPDATED"); st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
