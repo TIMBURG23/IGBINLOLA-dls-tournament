@@ -197,7 +197,7 @@ st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
 if st.session_state.champion:
     st.markdown(f'<div class="subtitle" style="color:#FFD700">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
 else:
-    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V14.1</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V15.0</div>', unsafe_allow_html=True)
 
 # --- 🔒 SIDEBAR ---
 with st.sidebar:
@@ -215,10 +215,12 @@ with st.sidebar:
         if st.session_state.started and not st.session_state.champion:
             if st.button("⏩ GENERATE NEXT ROUND"): 
                 if "Survival" in st.session_state.format:
+                    # 1. ELIMINATION LOGIC
                     data = []
                     for t in st.session_state.active_teams:
                         if t in current_team_stats: data.append(current_team_stats[t] | {'Team': t})
                     df = pd.DataFrame(data).sort_values(by=['Pts', 'GD'], ascending=False)
+                    
                     if len(df) <= 2: 
                         st.session_state.champion = df.iloc[0]['Team']
                     else:
@@ -226,25 +228,50 @@ with st.sidebar:
                         elim = df.tail(drop)['Team'].tolist()
                         for e in elim: 
                             if e in st.session_state.active_teams: st.session_state.active_teams.remove(e)
+                        
+                        # 2. MATCH GENERATION LOGIC (V15.0 UPGRADE)
                         rem = st.session_state.active_teams.copy()
-                        random.shuffle(rem)
                         nxt = []
-                        if len(rem) == 3:
+                        
+                        if len(rem) == 3: # Final 3 -> 2nd vs 3rd (Home & Away)
                             d3 = [current_team_stats[t] | {'Team': t} for t in rem]
                             df3 = pd.DataFrame(d3).sort_values(by=['Pts', 'GD'], ascending=False)
                             leader = df3.iloc[0]['Team']
-                            nxt = [(df3.iloc[1]['Team'], df3.iloc[2]['Team'])]
-                            st.session_state.current_round = f"SEMI (Bye: {leader})"
-                        elif len(rem) == 2:
+                            runner_up = df3.iloc[1]['Team']
+                            third = df3.iloc[2]['Team']
+                            
+                            nxt = [(runner_up, third), (third, runner_up)] # 2 MATCHES
+                            st.session_state.current_round = f"SEMI FINAL (Bye: {leader}) - 2 LEGS"
+                        
+                        elif len(rem) == 4: # Final 4 -> 2 Matches Each
+                            random.shuffle(rem)
+                            # Set A: 0v1, 2v3
+                            nxt.append((rem[0], rem[1]))
+                            nxt.append((rem[2], rem[3]))
+                            # Set B: 0v2, 1v3
+                            nxt.append((rem[0], rem[2]))
+                            nxt.append((rem[1], rem[3]))
+                            st.session_state.current_round = "FINAL 4 (2 MATCHES EACH)"
+                            
+                        elif len(rem) == 2: # Grand Final
                             nxt = [(rem[0], rem[1])]
-                            st.session_state.current_round = "FINAL"
-                        else:
-                            for i in range(0, len(rem), 2):
-                                if i+1 < len(rem): nxt.append((rem[i], rem[i+1]))
-                            st.session_state.current_round = f"Round of {len(rem)}"
-                        st.session_state.fixtures = nxt; st.session_state.results = {}; st.session_state.match_meta = {}
+                            st.session_state.current_round = "GRAND FINAL"
+                            
+                        else: # Standard Round -> 3 Matches Each
+                            # We generate 3 separate shuffle rounds
+                            for _ in range(3):
+                                random.shuffle(rem)
+                                for i in range(0, len(rem), 2):
+                                    if i+1 < len(rem):
+                                        nxt.append((rem[i], rem[i+1]))
+                            st.session_state.current_round = f"BATTLE ROYALE ({len(rem)} ALIVE) - 3 MATCHES"
+                        
+                        st.session_state.fixtures = nxt
+                        st.session_state.results = {}
+                        st.session_state.match_meta = {}
                         save_data_internal(current_player_stats); st.rerun()
-                else: 
+                
+                else: # STANDARD MODES
                     wins = []
                     for h, a in st.session_state.fixtures:
                         mid = f"{h}v{a}"
@@ -408,7 +435,7 @@ else:
 
     with tab2:
         filter_team = st.selectbox("FILTER TEAM", ["All"] + st.session_state.teams)
-        for i, (h, a) in enumerate(st.session_state.fixtures): # UPDATED FOR UNIQUE KEY
+        for i, (h, a) in enumerate(st.session_state.fixtures): # UNIQUE ID FIX
             if filter_team != "All" and filter_team not in [h, a]: continue
             mid = f"{h}v{a}"; res = st.session_state.results.get(mid)
             
@@ -427,8 +454,8 @@ else:
                 if st.session_state.is_admin and not st.session_state.champion:
                     with st.expander(f"📝 REPORT MATCH {i+1}"):
                         ac1, ac2 = st.columns(2)
-                        s1 = ac1.number_input(f"{h}", 0, 20, key=f"s1_{mid}_{i}") # UNIQUE KEY
-                        s2 = ac2.number_input(f"{a}", 0, 20, key=f"s2_{mid}_{i}") # UNIQUE KEY
+                        s1 = ac1.number_input(f"{h}", 0, 20, key=f"s1_{mid}_{i}")
+                        s2 = ac2.number_input(f"{a}", 0, 20, key=f"s2_{mid}_{i}")
                         p1, p2 = 0, 0
                         if s1 == s2 and "League" not in st.session_state.format:
                             st.caption("Penalties")
