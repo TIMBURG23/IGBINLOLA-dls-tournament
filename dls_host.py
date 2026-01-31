@@ -53,7 +53,7 @@ def init_defaults():
         'teams': [], 'format': 'League', 'current_round': 'Group Stage',
         'fixtures': [], 'results': {}, 'match_meta': {},
         'started': False, 'groups': {}, 'champion': None, 'active_teams': [], 
-        'is_admin': False, 'team_badges': {}, 'news': [], 
+        'admin_unlock': False, 'team_badges': {}, 'news': [], 
         'legacy_stats': {} 
     }
     for k, v in defaults.items():
@@ -67,11 +67,21 @@ def load_data():
                 st.session_state.teams = data.get("teams", [])
                 st.session_state.format = data.get("format", "League") 
                 st.session_state.current_round = data.get("current_round", "Group Stage")
-                st.session_state.fixtures = [tuple(f) for f in data.get("fixtures", [])]
-                st.session_state.results = data.get("results", {}) 
-                st.session_state.match_meta = data.get("match_meta", {}) 
+                
+                raw_fix = data.get("fixtures", [])
+                st.session_state.fixtures = [tuple(f) for f in raw_fix] if isinstance(raw_fix, list) else []
+                
+                r_data = data.get("results", {})
+                st.session_state.results = r_data if isinstance(r_data, dict) else {}
+                
+                m_data = data.get("match_meta", {})
+                st.session_state.match_meta = m_data if isinstance(m_data, dict) else {}
+
                 st.session_state.started = data.get("started", False)
-                st.session_state.groups = data.get("groups", {}) 
+                
+                g_data = data.get("groups", {})
+                st.session_state.groups = g_data if isinstance(g_data, dict) else {}
+                
                 st.session_state.champion = data.get("champion", None)
                 st.session_state.active_teams = data.get("active_teams", [])
                 st.session_state.team_badges = data.get("team_badges", {})
@@ -197,20 +207,25 @@ st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
 if st.session_state.champion:
     st.markdown(f'<div class="subtitle" style="color:#FFD700">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
 else:
-    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V15.1</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V16.2</div>', unsafe_allow_html=True)
 
 # --- 🔒 SIDEBAR ---
 with st.sidebar:
     st.markdown("### 🔐 MANAGER ACCESS")
-    pin = st.text_input("ENTER PIN", type="password")
     
-    if pin == "0209": 
-        st.session_state.is_admin = True
+    # PERSISTENT ADMIN AUTH
+    if not st.session_state.admin_unlock:
+        pin = st.text_input("ENTER PIN", type="password")
+        if pin == "0209": 
+            st.session_state.admin_unlock = True
+            st.rerun()
+    
+    if st.session_state.admin_unlock:
         st.success("ACCESS GRANTED")
-    else: 
-        st.session_state.is_admin = False
+        if st.button("🔒 LOGOUT"):
+            st.session_state.admin_unlock = False
+            st.rerun()
 
-    if st.session_state.is_admin:
         st.markdown("---")
         if st.session_state.started and not st.session_state.champion:
             if st.button("⏩ GENERATE NEXT ROUND"): 
@@ -250,7 +265,7 @@ with st.sidebar:
                         save_data_internal(current_player_stats); st.rerun()
                 else: 
                     wins = []
-                    for h, a in st.session_state.fixtures:
+                    for h, a in st.session_state.fixtures: # SAFE UNPACK (Works if tuple is length 2)
                         mid = f"{h}v{a}"
                         r = st.session_state.results.get(mid)
                         if not r: wins.append(random.choice([h, a]))
@@ -276,8 +291,11 @@ with st.sidebar:
             if new_team and new_team not in st.session_state.teams:
                 st.session_state.teams.append(new_team)
                 st.session_state.team_badges[new_team] = random.choice(BADGE_POOL)
+                
+                # HOT-JOIN LOGIC
                 if st.session_state.started:
                     st.session_state.active_teams.append(new_team)
+                    
                     if "League" in st.session_state.format:
                         new_matches = []
                         others = [t for t in st.session_state.teams if t != new_team]
@@ -286,9 +304,16 @@ with st.sidebar:
                             new_matches.append((opp, new_team))
                         random.shuffle(new_matches)
                         st.session_state.fixtures.extend(new_matches)
-                        st.toast(f"✅ {new_team} joined! {len(new_matches)} matches generated.")
+                        st.toast(f"✅ {new_team} joined League!")
+                    
+                    elif "World Cup" in st.session_state.format and st.session_state.groups:
+                        smallest_grp = min(st.session_state.groups, key=lambda k: len(st.session_state.groups[k]))
+                        st.session_state.groups[smallest_grp].append(new_team)
+                        st.toast(f"✅ {new_team} added to Group {smallest_grp}")
+                    
                     else:
                         st.toast(f"✅ {new_team} joined! Will play next round.")
+                
                 save_data_internal(current_player_stats); st.rerun()
 
         edit_target = st.selectbox("SELECT CLUB", ["Select..."] + st.session_state.teams)
@@ -326,9 +351,9 @@ with st.sidebar:
         if uploaded and st.button("⚠️ RESTORE NOW"):
             data = json.load(uploaded)
             st.session_state.teams = data["teams"]
-            st.session_state.fixtures = [tuple(f) for f in data["fixtures"]]
-            st.session_state.results = data["results"]
-            st.session_state.match_meta = data.get("match_meta", {})
+            st.session_state.fixtures = [tuple(f) for f in data["fixtures"]] if isinstance(data["fixtures"], list) else []
+            st.session_state.results = data["results"] if isinstance(data["results"], dict) else {}
+            st.session_state.match_meta = data.get("match_meta", {}) if isinstance(data.get("match_meta"), dict) else {}
             st.session_state.started = data.get("started", False)
             st.session_state.groups = data.get("groups", {})
             st.session_state.current_round = data.get("current_round", "Group Stage")
@@ -352,7 +377,7 @@ if not st.session_state.started:
             b = st.session_state.team_badges.get(t, "🛡️")
             with cols[i%4]: st.markdown(f"<div class='glass-panel' style='text-align:center'><h1>{b}</h1><h3>{t}</h3></div>", unsafe_allow_html=True)
 
-    if st.session_state.is_admin:
+    if st.session_state.admin_unlock: # FIX: UPDATED VARIABLE NAME
         st.markdown("### 🏆 SELECT FORMAT")
         fmt = st.radio("", ["Home & Away League", "World Cup (Groups + Knockout)", "Classic Knockout", "Survival Mode (Battle Royale)"], horizontal=True)
         if st.button("🚀 INITIALIZE SEASON"):
@@ -407,7 +432,9 @@ else:
             for g, t in st.session_state.groups.items(): st.markdown(f"#### {g}"); render_table(t)
         else:
             st.markdown("### 🥊 BRACKET")
-            for h, a in st.session_state.fixtures:
+            for i, f in enumerate(st.session_state.fixtures): 
+                if len(f) < 2: continue
+                h, a = f[0], f[1]
                 mid = f"{h}v{a}"; res = st.session_state.results.get(mid)
                 sc = f"{res[0]} - {res[1]}" if res else "VS"
                 if res and len(res)>2: sc += f" (P: {res[2]}-{res[3]})"
@@ -415,7 +442,12 @@ else:
 
     with tab2:
         filter_team = st.selectbox("FILTER TEAM", ["All"] + st.session_state.teams)
-        for i, (h, a) in enumerate(st.session_state.fixtures): 
+        
+        # SOFT UNPACKING for Fixture Loop
+        for i, fix in enumerate(st.session_state.fixtures): 
+            if len(fix) < 2: continue # SKIP CORRUPTED FIXTURES
+            h, a = fix[0], fix[1]
+            
             if filter_team != "All" and filter_team not in [h, a]: continue
             mid = f"{h}v{a}"; res = st.session_state.results.get(mid)
             
@@ -431,7 +463,7 @@ else:
                 else: c2.markdown(f"<h1 style='text-align:center; color:#64748b'>VS</h1>", unsafe_allow_html=True)
                 c3.markdown(f"<h3 style='text-align:left'>{b2} {a}</h3>", unsafe_allow_html=True)
                 
-                if st.session_state.is_admin and not st.session_state.champion:
+                if st.session_state.admin_unlock and not st.session_state.champion: # FIX: UPDATED VARIABLE
                     with st.expander(f"📝 REPORT MATCH {i+1}"):
                         ac1, ac2 = st.columns(2)
                         s1 = ac1.number_input(f"{h}", 0, 20, key=f"s1_{mid}_{i}") 
