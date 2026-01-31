@@ -5,6 +5,7 @@ import random
 import json
 import os
 import re
+import copy # Added for deepcopy
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="DLS Ultra Manager", page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
@@ -54,7 +55,8 @@ def init_defaults():
         'fixtures': [], 'results': {}, 'match_meta': {},
         'started': False, 'groups': {}, 'champion': None, 'active_teams': [], 
         'admin_unlock': False, 'team_badges': {}, 'news': [], 
-        'legacy_stats': {} 
+        'legacy_stats': {}, # Player Stats
+        'team_history': {}  # FIX: Stores team points between rounds
     }
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
@@ -87,15 +89,9 @@ def load_data():
                 st.session_state.team_badges = data.get("team_badges", {})
                 st.session_state.news = data.get("news", [])
                 
-                loaded_p_stats = data.get("player_stats", {})
-                loaded_legacy = data.get("legacy_stats", {})
-                
-                if loaded_legacy:
-                    st.session_state.legacy_stats = loaded_legacy
-                elif loaded_p_stats and not st.session_state.match_meta:
-                    st.session_state.legacy_stats = loaded_p_stats
-                else:
-                    st.session_state.legacy_stats = {}
+                st.session_state.legacy_stats = data.get("legacy_stats", {})
+                # FIX: Load Team History
+                st.session_state.team_history = data.get("team_history", {})
 
                 for t in st.session_state.teams:
                     if t not in st.session_state.team_badges:
@@ -117,13 +113,59 @@ def save_data_internal(current_stats):
         "champion": st.session_state.champion, "active_teams": st.session_state.active_teams,
         "team_badges": st.session_state.team_badges, "news": st.session_state.news,
         "legacy_stats": st.session_state.legacy_stats, 
-        "player_stats": safe_stats
+        "player_stats": safe_stats,
+        "team_history": st.session_state.team_history # FIX: Save History
     }
     with open(DB_FILE, "w") as f: json.dump(data, f)
 
-# --- 🧠 HYBRID RECALCULATION ENGINE ---
+# --- 🧠 LOGIC FIXES ---
+
+def generate_balanced_fixtures(teams, matches_per_team):
+    """FIX: Ticket system to ensure exactly N matches per team."""
+    if len(teams) < 2: return []
+    
+    # Create tickets
+    bag = []
+    for t in teams:
+        for _ in range(matches_per_team):
+            bag.append(t)
+    
+    random.shuffle(bag)
+    fixtures = []
+    
+    # Try to pair (Retry loop to prevent self-matches)
+    for attempt in range(50):
+        temp_bag = bag.copy()
+        temp_fixtures = []
+        random.shuffle(temp_bag)
+        valid = True
+        
+        while len(temp_bag) >= 2:
+            t1 = temp_bag.pop()
+            # Find opponent that isn't self
+            candidates = [x for x in temp_bag if x != t1]
+            if not candidates:
+                valid = False; break
+            
+            t2 = candidates[0]
+            temp_bag.remove(t2)
+            temp_fixtures.append((t1, t2))
+            
+        if valid and len(temp_bag) == 0:
+            return temp_fixtures
+            
+    # Fallback if perfect balance fails (rare)
+    return list(itertools.combinations(teams, 2))[:len(teams)*matches_per_team//2]
+
 def recalculate_stats():
-    t_stats = {t: {'P':0, 'W':0, 'D':0, 'L':0, 'GF':0, 'GA':0, 'GD':0, 'Pts':0, 'Form': []} for t in st.session_state.teams}
+    # FIX: Start with HISTORY, not zero
+    t_stats = copy.deepcopy(st.session_state.team_history)
+    
+    # Initialize any missing teams
+    for t in st.session_state.teams:
+        if t not in t_stats:
+            t_stats[t] = {'P':0, 'W':0, 'D':0, 'L':0, 'GF':0, 'GA':0, 'GD':0, 'Pts':0, 'Form': []}
+
     p_stats = {} 
 
     if 'legacy_stats' in st.session_state:
@@ -147,7 +189,16 @@ def recalculate_stats():
 
     for mid, res in st.session_state.results.items():
         try:
-            h, a = mid.split('v')
+            # FIX: Robust ID splitting
+            if "_" in mid and "v" in mid:
+                # Format: h_v_a_index
+                parts = mid.split('_')
+                match_part = parts[0] # assuming h_v_a is first part or handle carefully
+                # Safer: Extract from "TeamAvTeamB_0"
+                base = mid.rsplit('_', 1)[0]
+                h, a = base.split('v')
+            else:
+                h, a = mid.split('v')
         except: continue
         
         if h not in t_stats or a not in t_stats: continue 
@@ -207,13 +258,12 @@ st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
 if st.session_state.champion:
     st.markdown(f'<div class="subtitle" style="color:#FFD700">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
 else:
-    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V16.2</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="subtitle">{st.session_state.current_round} /// V21.0 FIX</div>', unsafe_allow_html=True)
 
 # --- 🔒 SIDEBAR ---
 with st.sidebar:
     st.markdown("### 🔐 MANAGER ACCESS")
     
-    # PERSISTENT ADMIN AUTH
     if not st.session_state.admin_unlock:
         pin = st.text_input("ENTER PIN", type="password")
         if pin == "0209": 
@@ -229,6 +279,9 @@ with st.sidebar:
         st.markdown("---")
         if st.session_state.started and not st.session_state.champion:
             if st.button("⏩ GENERATE NEXT ROUND"): 
+                # FIX: SNAPSHOT POINTS BEFORE GENERATION
+                st.session_state.team_history = copy.deepcopy(current_team_stats)
+                
                 if "Survival" in st.session_state.format:
                     data = []
                     for t in st.session_state.active_teams:
@@ -244,29 +297,34 @@ with st.sidebar:
                             if e in st.session_state.active_teams: st.session_state.active_teams.remove(e)
                         
                         rem = st.session_state.active_teams.copy()
-                        random.shuffle(rem)
                         nxt = []
                         if len(rem) == 3:
+                            # Final 3 Logic
                             d3 = [current_team_stats[t] | {'Team': t} for t in rem]
                             df3 = pd.DataFrame(d3).sort_values(by=['Pts', 'GD'], ascending=False)
                             leader = df3.iloc[0]['Team']
-                            nxt = [(df3.iloc[1]['Team'], df3.iloc[2]['Team'])]
+                            others = [t for t in rem if t != leader]
+                            nxt = [(others[0], others[1]), (others[1], others[0])] # 2 Legs
                             st.session_state.current_round = f"SEMI (Bye: {leader})"
                         elif len(rem) == 2:
                             nxt = [(rem[0], rem[1])]
                             st.session_state.current_round = "FINAL"
                         else:
-                            for _ in range(3): # 3 MATCHES PER ROUND LOGIC
-                                random.shuffle(rem)
-                                for i in range(0, len(rem), 2):
-                                    if i+1 < len(rem): nxt.append((rem[i], rem[i+1]))
+                            # FIX: Use Balanced Generator for 3 matches
+                            nxt = generate_balanced_fixtures(rem, 3)
                             st.session_state.current_round = f"Round of {len(rem)}"
-                        st.session_state.fixtures = nxt; st.session_state.results = {}; st.session_state.match_meta = {}
+                        
+                        st.session_state.fixtures = nxt
+                        st.session_state.results = {}
+                        st.session_state.match_meta = {}
                         save_data_internal(current_player_stats); st.rerun()
                 else: 
+                    # League/Cup Logic
                     wins = []
-                    for h, a in st.session_state.fixtures: # SAFE UNPACK (Works if tuple is length 2)
-                        mid = f"{h}v{a}"
+                    for i, f in enumerate(st.session_state.fixtures):
+                        if len(f) < 2: continue
+                        h, a = f[0], f[1]
+                        mid = f"{h}v{a}_{i}"
                         r = st.session_state.results.get(mid)
                         if not r: wins.append(random.choice([h, a]))
                         else:
@@ -344,7 +402,8 @@ with st.sidebar:
             "started": st.session_state.started, "groups": st.session_state.groups, 
             "champion": st.session_state.champion, "active_teams": st.session_state.active_teams, 
             "team_badges": st.session_state.team_badges, "news": st.session_state.news,
-            "legacy_stats": st.session_state.legacy_stats, "player_stats": safe_export_stats
+            "legacy_stats": st.session_state.legacy_stats, "player_stats": safe_export_stats,
+            "team_history": st.session_state.team_history
         })
         st.download_button("📥 DOWNLOAD BACKUP", data=current_data, file_name="dls_backup.json", mime="application/json")
         uploaded = st.file_uploader("📤 RESTORE BACKUP", type=['json'])
@@ -362,6 +421,7 @@ with st.sidebar:
             st.session_state.team_badges = data.get("team_badges", {})
             st.session_state.news = data.get("news", [])
             st.session_state.legacy_stats = data.get("legacy_stats", data.get("player_stats", {}))
+            st.session_state.team_history = data.get("team_history", {})
             save_data_internal(current_player_stats); st.rerun()
         if st.button("🧨 FACTORY RESET"):
             st.session_state.clear()
@@ -377,7 +437,7 @@ if not st.session_state.started:
             b = st.session_state.team_badges.get(t, "🛡️")
             with cols[i%4]: st.markdown(f"<div class='glass-panel' style='text-align:center'><h1>{b}</h1><h3>{t}</h3></div>", unsafe_allow_html=True)
 
-    if st.session_state.admin_unlock: # FIX: UPDATED VARIABLE NAME
+    if st.session_state.admin_unlock: 
         st.markdown("### 🏆 SELECT FORMAT")
         fmt = st.radio("", ["Home & Away League", "World Cup (Groups + Knockout)", "Classic Knockout", "Survival Mode (Battle Royale)"], horizontal=True)
         if st.button("🚀 INITIALIZE SEASON"):
@@ -393,12 +453,8 @@ if not st.session_state.started:
                     st.session_state.groups = groups; matches = []
                     for g, teams in groups.items(): matches.extend(list(itertools.combinations(teams, 2)))
                 elif "Survival" in fmt:
-                    shuffled = st.session_state.teams.copy(); random.shuffle(shuffled); matches = []
-                    # 3 MATCHES PER ROUND (INITIAL)
-                    for _ in range(3):
-                        random.shuffle(shuffled)
-                        for i in range(0, len(shuffled), 2):
-                            if i+1 < len(shuffled): matches.append((shuffled[i], shuffled[i+1]))
+                    # FIX: Use balanced generator instead of shuffle
+                    matches = generate_balanced_fixtures(st.session_state.teams, 3)
                 elif "Knockout" in fmt:
                     shuffled = st.session_state.teams.copy(); random.shuffle(shuffled); matches = []
                     for i in range(0, len(shuffled), 2):
@@ -435,7 +491,7 @@ else:
             for i, f in enumerate(st.session_state.fixtures): 
                 if len(f) < 2: continue
                 h, a = f[0], f[1]
-                mid = f"{h}v{a}"; res = st.session_state.results.get(mid)
+                mid = f"{h}v{a}_{i}"; res = st.session_state.results.get(mid)
                 sc = f"{res[0]} - {res[1]}" if res else "VS"
                 if res and len(res)>2: sc += f" (P: {res[2]}-{res[3]})"
                 st.markdown(f"<div class='glass-panel' style='display:flex; justify-content:space-between'><b>{h}</b> <b>{sc}</b> <b>{a}</b></div>", unsafe_allow_html=True)
@@ -449,7 +505,10 @@ else:
             h, a = fix[0], fix[1]
             
             if filter_team != "All" and filter_team not in [h, a]: continue
-            mid = f"{h}v{a}"; res = st.session_state.results.get(mid)
+            
+            # FIX: UNIQUE MATCH ID
+            mid = f"{h}v{a}_{i}" 
+            res = st.session_state.results.get(mid)
             
             with st.container():
                 st.markdown(f"<div class='glass-panel'>", unsafe_allow_html=True)
@@ -463,27 +522,27 @@ else:
                 else: c2.markdown(f"<h1 style='text-align:center; color:#64748b'>VS</h1>", unsafe_allow_html=True)
                 c3.markdown(f"<h3 style='text-align:left'>{b2} {a}</h3>", unsafe_allow_html=True)
                 
-                if st.session_state.admin_unlock and not st.session_state.champion: # FIX: UPDATED VARIABLE
+                if st.session_state.admin_unlock and not st.session_state.champion: 
                     with st.expander(f"📝 REPORT MATCH {i+1}"):
                         ac1, ac2 = st.columns(2)
-                        s1 = ac1.number_input(f"{h}", 0, 20, key=f"s1_{mid}_{i}") 
-                        s2 = ac2.number_input(f"{a}", 0, 20, key=f"s2_{mid}_{i}") 
+                        s1 = ac1.number_input(f"{h}", 0, 20, key=f"s1_{mid}") 
+                        s2 = ac2.number_input(f"{a}", 0, 20, key=f"s2_{mid}") 
                         p1, p2 = 0, 0
                         if s1 == s2 and "League" not in st.session_state.format:
                             st.caption("Penalties")
-                            p1 = ac1.number_input(f"P {h}", 0, 20, key=f"p1_{mid}_{i}")
-                            p2 = ac2.number_input(f"P {a}", 0, 20, key=f"p2_{mid}_{i}")
+                            p1 = ac1.number_input(f"P {h}", 0, 20, key=f"p1_{mid}")
+                            p2 = ac2.number_input(f"P {a}", 0, 20, key=f"p2_{mid}")
 
                         sc1, sc2 = st.columns(2)
                         prev = st.session_state.match_meta.get(mid, {})
-                        gs1 = sc1.text_input("Scorers (Home)", value=prev.get('h_s',''), key=f"g1_{mid}_{i}", placeholder="Messi (2), ...")
-                        gs2 = sc2.text_input("Scorers (Away)", value=prev.get('a_s',''), key=f"g2_{mid}_{i}")
-                        ha = sc1.text_input("Ast H", value=prev.get('h_a',''), key=f"ah_{mid}_{i}")
-                        aa = sc2.text_input("Ast A", value=prev.get('a_a',''), key=f"aa_{mid}_{i}")
-                        hr = sc1.text_input("Red H", value=prev.get('h_r',''), key=f"rh_{mid}_{i}")
-                        ar = sc2.text_input("Red A", value=prev.get('a_r',''), key=f"ra_{mid}_{i}")
+                        gs1 = sc1.text_input("Scorers (Home)", value=prev.get('h_s',''), key=f"g1_{mid}", placeholder="Messi (2), ...")
+                        gs2 = sc2.text_input("Scorers (Away)", value=prev.get('a_s',''), key=f"g2_{mid}")
+                        ha = sc1.text_input("Ast H", value=prev.get('h_a',''), key=f"ah_{mid}")
+                        aa = sc2.text_input("Ast A", value=prev.get('a_a',''), key=f"aa_{mid}")
+                        hr = sc1.text_input("Red H", value=prev.get('h_r',''), key=f"rh_{mid}")
+                        ar = sc2.text_input("Red A", value=prev.get('a_r',''), key=f"ra_{mid}")
                         
-                        if st.button("CONFIRM RESULT", key=f"b_{mid}_{i}"):
+                        if st.button("CONFIRM RESULT", key=f"b_{mid}"):
                             if s1 == s2 and "League" not in st.session_state.format:
                                 st.session_state.results[mid] = [s1, s2, p1, p2]
                             else:
