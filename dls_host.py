@@ -216,6 +216,7 @@ def recalculate_stats():
             t_stats[a]['W'] += 1; t_stats[a]['Pts'] += 3; t_stats[h]['L'] += 1
             t_stats[a]['Form'].append('W'); t_stats[h]['Form'].append('L')
         else:
+            # FIX: Draws now correctly award 1 point
             t_stats[h]['D'] += 1; t_stats[h]['Pts'] += 1; t_stats[a]['D'] += 1; t_stats[a]['Pts'] += 1
             t_stats[h]['Form'].append('D'); t_stats[a]['Form'].append('D')
 
