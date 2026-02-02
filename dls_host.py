@@ -1,1267 +1,1100 @@
-import streamlit as st
-import pandas as pd
-import itertools
-import random
-import json
-import os
-import re
-import copy
-from datetime import datetime
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DLS Ultra Manager - Battle Royale</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&family=Rajdhani:wght@500;700&display=swap');
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="DLS Ultra Manager", page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-# --- CSS STYLING ---
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&family=Rajdhani:wght@500;700&display=swap');
+        body {
+            background-color: #09090b;
+            background-image: radial-gradient(circle at 50% 0%, #111827 0%, transparent 80%);
+            color: white;
+            font-family: 'Rajdhani', sans-serif;
+            min-height: 100vh;
+            padding: 20px;
+        }
 
-    .stApp {
-        background-color: #09090b;
-        background-image: radial-gradient(circle at 50% 0%, #111827 0%, transparent 80%);
-        color: white;
-    }
-    h1, h2, h3 { font-family: 'Teko', sans-serif !important; text-transform: uppercase; margin: 0 !important; }
-    .big-title {
-        font-size: 5rem; font-weight: 700; text-align: center;
-        background: linear-gradient(180deg, #fff 0%, #64748b 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        text-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
-    }
-    .glass-panel {
-        background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); 
-        border-radius: 12px; padding: 20px; margin-bottom: 15px;
-    }
-    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
-        background: rgba(0,0,0,0.6) !important; color: white !important; border: 1px solid #334155 !important;
-    }
-    .stButton > button {
-        background: transparent; border: 1px solid #3b82f6; color: #3b82f6;
-        font-family: 'Rajdhani', sans-serif; font-weight: 700; text-transform: uppercase; width: 100%;
-    }
-    .stButton > button:hover { background: #3b82f6; color: white; }
-    .footer { text-align: center; padding: 20px; color: #475569; font-family: 'Rajdhani'; border-top: 1px solid #1e293b; margin-top: 50px; }
-    .designer-name { color: #3b82f6; font-weight: bold; letter-spacing: 1px; }
-    .club-badge { font-size: 3rem; margin-bottom: 10px; }
-    .eliminated { opacity: 0.5; text-decoration: line-through; color: #ef4444 !important; }
-    .drop-zone { background: linear-gradient(90deg, rgba(239,68,68,0.2) 0%, rgba(239,68,68,0.05) 100%); border: 2px solid #ef4444; }
-    .safe-zone { background: linear-gradient(90deg, rgba(34,197,94,0.1) 0%, transparent 100%); border-left: 3px solid #22c55e; }
-    .bye-zone { background: linear-gradient(90deg, rgba(250,204,21,0.1) 0%, transparent 100%); border-left: 3px solid #facc15; }
-    .phase-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; margin-left: 10px; }
-    .phase-1 { background: #dc2626; color: white; }
-    .phase-2 { background: #ea580c; color: white; }
-    .phase-3 { background: #d97706; color: white; }
-    .phase-4 { background: #ca8a04; color: white; }
-    .phase-final { background: #fbbf24; color: #000; }
-    .sudden-death { background: linear-gradient(90deg, #000 0%, #dc2626 50%, #000 100%); color: white; border: 2px solid #dc2626; }
-</style>
-""", unsafe_allow_html=True)
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
 
-# --- 💾 DATABASE ---
-DB_FILE = "dls_ultra_db.json"
-BADGE_POOL = ["🦁", "🦅", "🐺", "🐉", "🦈", "🐍", "🐻", "🐝", "🦂", "🕷️", "⚓", "⚔️", "🛡️", "👑", "⚡", "🔥", "🌪️", "🌊", "🏰", "🚀", "💀", "👹", "👽", "🤖", "👻", "🎃", "💎", "🎯", "🎲", "🎱"]
+        h1, h2, h3 {
+            font-family: 'Teko', sans-serif;
+            text-transform: uppercase;
+            margin: 0;
+        }
 
-def init_defaults():
-    defaults = {
-        'teams': [], 'format': 'League', 'current_round': 'Group Stage',
-        'fixtures': [], 'results': {}, 'match_meta': {},
-        'started': False, 'groups': {}, 'champion': None, 'active_teams': [], 
-        'admin_unlock': False, 'team_badges': {}, 'news': [], 
-        'legacy_stats': {}, 'team_history': {},
-        'eliminated_teams': [], 'round_number': 1, 'survival_history': [],
-        'battle_phase': 'Phase 1: The Purge',  # Track current phase
-        'bye_team': None,  # For Phase 3: Team with bye
-        'cumulative_stats': {},  # Store cumulative points
-        'sudden_death_round': 0,  # Track sudden death rounds
-        'phase1_match_count': 2  # NEW: Track matches per team in Phase 1 (2 instead of 3)
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state: st.session_state[k] = v
+        .big-title {
+            font-size: 4rem;
+            font-weight: 700;
+            text-align: center;
+            background: linear-gradient(180deg, #fff 0%, #64748b 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+            margin-bottom: 20px;
+        }
 
-def load_data():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r") as f:
-                data = json.load(f)
-                st.session_state.teams = data.get("teams", [])
-                st.session_state.format = data.get("format", "League") 
-                st.session_state.current_round = data.get("current_round", "Group Stage")
-                
-                raw_fix = data.get("fixtures", [])
-                st.session_state.fixtures = [tuple(f) for f in raw_fix] if isinstance(raw_fix, list) else []
-                
-                r_data = data.get("results", {})
-                st.session_state.results = r_data if isinstance(r_data, dict) else {}
-                
-                m_data = data.get("match_meta", {})
-                st.session_state.match_meta = m_data if isinstance(m_data, dict) else {}
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            backdrop-filter: blur(10px);
+        }
 
-                st.session_state.started = data.get("started", False)
-                
-                g_data = data.get("groups", {})
-                st.session_state.groups = g_data if isinstance(g_data, dict) else {}
-                
-                st.session_state.champion = data.get("champion", None)
-                st.session_state.active_teams = data.get("active_teams", [])
-                st.session_state.team_badges = data.get("team_badges", {})
-                st.session_state.news = data.get("news", [])
-                st.session_state.legacy_stats = data.get("legacy_stats", {})
-                st.session_state.team_history = data.get("team_history", {})
-                
-                # Survival-specific data
-                st.session_state.eliminated_teams = data.get("eliminated_teams", [])
-                st.session_state.round_number = data.get("round_number", 1)
-                st.session_state.survival_history = data.get("survival_history", [])
-                st.session_state.battle_phase = data.get("battle_phase", "Phase 1: The Purge")
-                st.session_state.bye_team = data.get("bye_team", None)
-                st.session_state.cumulative_stats = data.get("cumulative_stats", {})
-                st.session_state.sudden_death_round = data.get("sudden_death_round", 0)
-                st.session_state.phase1_match_count = data.get("phase1_match_count", 2)  # Load match count
+        .phase-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-left: 10px;
+        }
 
-                for t in st.session_state.teams:
-                    if t not in st.session_state.team_badges:
-                        st.session_state.team_badges[t] = random.choice(BADGE_POOL)
-        except: init_defaults()
-    else: init_defaults()
+        .phase-1 { background: #dc2626; color: white; }
+        .phase-2 { background: #ea580c; color: white; }
+        .phase-3 { background: #d97706; color: white; }
+        .phase-4 { background: #ca8a04; color: white; }
 
-def save_data_internal(current_stats):
-    safe_stats = {}
-    if current_stats:
-        for k, v in current_stats.items():
-            safe_stats[str(k)] = v
+        .drop-zone {
+            background: linear-gradient(90deg, rgba(239,68,68,0.2) 0%, rgba(239,68,68,0.05) 100%);
+            border: 2px solid #ef4444;
+        }
 
-    data = {
-        "teams": st.session_state.teams, "format": st.session_state.format,
-        "current_round": st.session_state.current_round, "fixtures": st.session_state.fixtures,
-        "results": st.session_state.results, "match_meta": st.session_state.match_meta,
-        "started": st.session_state.started, "groups": st.session_state.groups,
-        "champion": st.session_state.champion, "active_teams": st.session_state.active_teams,
-        "team_badges": st.session_state.team_badges, "news": st.session_state.news,
-        "legacy_stats": st.session_state.legacy_stats, 
-        "player_stats": safe_stats,
-        "team_history": st.session_state.team_history,
-        "eliminated_teams": st.session_state.eliminated_teams,
-        "round_number": st.session_state.round_number,
-        "survival_history": st.session_state.survival_history,
-        "battle_phase": st.session_state.battle_phase,
-        "bye_team": st.session_state.bye_team,
-        "cumulative_stats": st.session_state.cumulative_stats,
-        "sudden_death_round": st.session_state.sudden_death_round,
-        "phase1_match_count": st.session_state.phase1_match_count  # Save match count
-    }
-    with open(DB_FILE, "w") as f: json.dump(data, f)
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+        }
 
-# --- 🧠 BATTLE ROYALE CORE LOGIC ---
+        .tab {
+            padding: 10px 20px;
+            background: transparent;
+            border: 1px solid #3b82f6;
+            color: #3b82f6;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
 
-def generate_balanced_fixtures_fixed(teams, matches_per_team):
-    """FIXED: Generate fixtures where EVERY team plays exactly N matches"""
-    if len(teams) < 2: return []
-    
-    # Create a round-robin schedule
-    def round_robin(teams_list):
-        """Generate round-robin pairs"""
-        if len(teams_list) % 2:
-            teams_list.append(None)  # Add dummy for odd number
-        
-        n = len(teams_list)
-        fixtures = []
-        
-        for round_num in range(n - 1):
-            round_fixtures = []
-            for i in range(n // 2):
-                if teams_list[i] is not None and teams_list[n - 1 - i] is not None:
-                    round_fixtures.append((teams_list[i], teams_list[n - 1 - i]))
+        .tab:hover {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .tab.active {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        th {
+            background: rgba(59, 130, 246, 0.1);
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #3b82f6;
+            font-family: 'Teko', sans-serif;
+            font-size: 1.2rem;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #334155;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: #1e293b;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 5px;
+            transition: width 0.3s ease;
+        }
+
+        .btn {
+            background: transparent;
+            border: 1px solid #3b82f6;
+            color: #3b82f6;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin: 5px;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-danger {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+
+        .btn-danger:hover {
+            background: #ef4444;
+            color: white;
+        }
+
+        .input-group {
+            margin: 10px 0;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            margin: 5px 0;
+        }
+
+        .team-badge {
+            font-size: 1.5rem;
+            margin-right: 10px;
+        }
+
+        .match-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            margin: 10px 0;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+
+        .match-score {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #3b82f6;
+            min-width: 100px;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .big-title {
+                font-size: 2.5rem;
+            }
             
-            # Rotate for next round
-            teams_list.insert(1, teams_list.pop())
-            fixtures.extend(round_fixtures)
+            .tabs {
+                flex-wrap: wrap;
+            }
+            
+            .tab {
+                flex: 1;
+                min-width: 120px;
+                text-align: center;
+            }
+            
+            table {
+                font-size: 0.9rem;
+            }
+            
+            th, td {
+                padding: 8px 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="big-title">DLS ULTRA</h1>
         
-        return fixtures
-    
-    # Get all possible unique pairings
-    all_possible = list(itertools.combinations(teams, 2))
-    random.shuffle(all_possible)
-    
-    # If matches_per_team is small, use round-robin
-    if matches_per_team <= len(teams) - 1:
-        # Create multiple mini-rounds
-        fixtures = []
-        for _ in range(matches_per_team):
-            round_fixtures = round_robin(teams.copy())
-            # Filter out any None teams from the round-robin
-            round_fixtures = [f for f in round_fixtures if f[0] is not None and f[1] is not None]
-            fixtures.extend(round_fixtures)
+        <div id="battleRoyaleHeader" class="glass-panel" style="text-align: center; display: none;">
+            <h2 style="color: white; margin: 0;">💀 BATTLE ROYALE PROTOCOL</h2>
+            <p style="color: #fca5a5; margin: 5px 0 0 0;">"Survive the Cut. Trust No One."</p>
+        </div>
         
-        # Take only the required number of fixtures
-        total_matches_needed = (len(teams) * matches_per_team) // 2
-        if len(fixtures) >= total_matches_needed:
-            return fixtures[:total_matches_needed]
-    
-    # Fallback: Use combination approach
-    team_match_counts = {team: 0 for team in teams}
-    fixtures = []
-    available_pairs = all_possible.copy()
-    
-    while available_pairs and min(team_match_counts.values()) < matches_per_team:
-        # Find a pair where both teams need matches
-        for pair in available_pairs[:]:
-            t1, t2 = pair
-            if team_match_counts[t1] < matches_per_team and team_match_counts[t2] < matches_per_team:
-                fixtures.append(pair)
-                team_match_counts[t1] += 1
-                team_match_counts[t2] += 1
-                available_pairs.remove(pair)
-                break
-        else:
-            # No suitable pair found, break
-            break
-    
-    # If we still need more matches, try to add random ones
-    if min(team_match_counts.values()) < matches_per_team:
-        # Get teams that need more matches
-        needy_teams = [t for t in teams if team_match_counts[t] < matches_per_team]
+        <div id="championDisplay" class="glass-panel" style="text-align: center; color:#FFD700; display: none;">
+            <h2>👑 CHAMPION: <span id="championName"></span> 👑</h2>
+        </div>
         
-        # Try to create additional matches for needy teams
-        for i in range(len(needy_teams)):
-            for j in range(i + 1, len(needy_teams)):
-                t1, t2 = needy_teams[i], needy_teams[j]
-                if team_match_counts[t1] < matches_per_team and team_match_counts[t2] < matches_per_team:
-                    # Check if this pair already exists
-                    existing = False
-                    for fix in fixtures:
-                        if (fix[0] == t1 and fix[1] == t2) or (fix[0] == t2 and fix[1] == t1):
-                            existing = True
-                            break
+        <div id="roundInfo" class="glass-panel" style="text-align: center;">
+            <h2 id="currentRound">Round 1 • Phase 1: The Purge</h2>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('standings')">📊 STANDINGS</button>
+            <button class="tab" onclick="showTab('matches')">⚽ MATCH CENTER</button>
+            <button class="tab" onclick="showTab('stats')">⭐ STATS</button>
+            <button class="tab" onclick="showTab('info')">💀 BATTLE INFO</button>
+        </div>
+
+        <!-- TAB 1: STANDINGS -->
+        <div id="standings" class="tab-content active">
+            <div class="glass-panel">
+                <h3>💀 SURVIVAL ARENA • <span id="teamsAlive">8</span> Teams Alive</h3>
+                <div id="dropZoneWarning" style="color: #ef4444; margin: 10px 0; padding: 10px; background: rgba(239,68,68,0.1); border-radius: 6px;">
+                    ⚠️ <strong>DROP ZONE:</strong> Bottom 2 teams will be eliminated after this round!
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Club</th>
+                            <th>P</th>
+                            <th>W</th>
+                            <th>D</th>
+                            <th>L</th>
+                            <th>GF</th>
+                            <th>GA</th>
+                            <th>GD</th>
+                            <th>Pts</th>
+                        </tr>
+                    </thead>
+                    <tbody id="standingsTable">
+                        <!-- Table will be populated by JavaScript -->
+                    </tbody>
+                </table>
+                
+                <div id="eliminatedSection" style="margin-top: 20px; display: none;">
+                    <h4>☠️ Eliminated Teams</h4>
+                    <div id="eliminatedList"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: MATCH CENTER -->
+        <div id="matches" class="tab-content">
+            <div class="glass-panel">
+                <h3>⚽ MATCH CENTER</h3>
+                <div class="input-group">
+                    <select id="teamFilter" onchange="filterMatches()">
+                        <option value="all">All Teams</option>
+                    </select>
+                </div>
+                <div id="matchesList">
+                    <!-- Matches will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: STATS -->
+        <div id="stats" class="tab-content">
+            <div class="glass-panel">
+                <h3>⭐ PLAYER STATS</h3>
+                <div id="goldenBoot" class="glass-panel" style="text-align: center;">
+                    <h3>👑 GOLDEN BOOT LEADER</h3>
+                    <h2 id="topScorer" style="color: #fbbf24;">No goals recorded yet</h2>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                    <div>
+                        <h4>⚽ Top Scorers</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Player</th>
+                                    <th>Club</th>
+                                    <th>Goals</th>
+                                </tr>
+                            </thead>
+                            <tbody id="goalsTable">
+                                <tr><td colspan="3" style="text-align: center;">No goals recorded yet</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                     
-                    if not existing:
-                        fixtures.append((t1, t2))
-                        team_match_counts[t1] += 1
-                        team_match_counts[t2] += 1
-    
-    return fixtures
+                    <div>
+                        <h4>👟 Top Assists</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Player</th>
+                                    <th>Club</th>
+                                    <th>Assists</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assistsTable">
+                                <tr><td colspan="3" style="text-align: center;">No assists recorded yet</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-def generate_fixtures_for_phase(teams, phase):
-    """Generate fixtures based on current phase - FIXED FOR 2 MATCHES EACH IN PHASE 1"""
-    shuffled = teams.copy()
-    random.shuffle(shuffled)
-    
-    if phase == "Phase 1: The Purge":
-        # FIXED: 2 matches per team instead of 3
-        matches_per_team = 2  # Changed from 3 to 2
-        
-        # Generate balanced fixtures
-        fixtures = generate_balanced_fixtures_fixed(shuffled, matches_per_team)
-        
-        # Log match count
-        match_counts = {}
-        for team in teams:
-            match_counts[team] = 0
-        for fix in fixtures:
-            match_counts[fix[0]] += 1
-            match_counts[fix[1]] += 1
-        
-        return fixtures
-    
-    elif phase == "Phase 2: The Squeeze":
-        # For 4 teams: 2 matches each (home and away against each other)
-        fixtures = []
-        for i in range(len(shuffled)):
-            for j in range(i+1, len(shuffled)):
-                fixtures.append((shuffled[i], shuffled[j]))
-                fixtures.append((shuffled[j], shuffled[i]))  # Return fixture
-        random.shuffle(fixtures)
-        return fixtures
-    
-    elif phase == "Phase 3: The Standoff":
-        # For 3 teams: 2nd vs 3rd in Sudden Death Semi-Final (2 legs)
-        # First, determine standings
-        standings = get_cumulative_standings()
-        if len(standings) < 3: return []
-        
-        # Sort by points (highest first)
-        standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
-        
-        leader = standings[0]['Team']
-        second = standings[1]['Team']
-        third = standings[2]['Team']
-        
-        st.session_state.bye_team = leader
-        st.session_state.news.insert(0, f"👑 {leader} gets automatic BYE to Grand Final!")
-        
-        # 2nd vs 3rd play two legs
-        return [(second, third), (third, second)]
-    
-    elif phase == "Phase 4: The Grand Final":
-        # For 2 teams: one final match
-        return [(shuffled[0], shuffled[1])]
-    
-    return []
+        <!-- TAB 4: BATTLE INFO -->
+        <div id="info" class="tab-content">
+            <div class="glass-panel">
+                <h3>💀 BATTLE ROYALE PROTOCOL</h3>
+                
+                <div style="margin: 20px 0;">
+                    <button class="btn" onclick="toggleSection('rules')">📜 THE CORE RULES</button>
+                    <button class="btn" onclick="toggleSection('phases')">🩸 ELIMINATION PHASES</button>
+                    <button class="btn" onclick="toggleSection('tiebreakers')">📊 TIE-BREAKERS</button>
+                </div>
+                
+                <div id="rules" class="section-content" style="display: block;">
+                    <h4>📜 THE CORE RULES</h4>
+                    <ul style="margin-left: 20px; line-height: 1.6;">
+                        <li><strong>The "Cumulative" Table:</strong> Points carry over FOREVER</li>
+                        <li><strong>Matchmaking: Pure RNG:</strong> No fixed bracket, random pairing every round</li>
+                        <li><strong>Strategy:</strong> Hoard points to stay safe from the "Drop Zone"</li>
+                    </ul>
+                </div>
+                
+                <div id="phases" class="section-content" style="display: none;">
+                    <h4>🩸 THE ELIMINATION PHASES</h4>
+                    <ul style="margin-left: 20px; line-height: 1.6;">
+                        <li><strong>Phase 1: The Purge (5+ Teams):</strong> Bottom 2 eliminated every round (2 matches each)</li>
+                        <li><strong>Phase 2: The Squeeze (4 Teams):</strong> Bottom 1 eliminated per round</li>
+                        <li><strong>Phase 3: The Standoff (3 Teams):</strong> 1st gets bye, 2nd vs 3rd sudden death</li>
+                        <li><strong>Phase 4: Grand Final (2 Teams):</strong> One match for the crown</li>
+                    </ul>
+                </div>
+                
+                <div id="tiebreakers" class="section-content" style="display: none;">
+                    <h4>📊 TIE-BREAKERS</h4>
+                    <ol style="margin-left: 20px; line-height: 1.6;">
+                        <li><strong>Points</strong> (Highest wins)</li>
+                        <li><strong>Goal Difference</strong> (Better GD wins)</li>
+                        <li><strong>Goals For</strong> (Most goals scored wins)</li>
+                    </ol>
+                </div>
+                
+                <div style="margin-top: 30px;">
+                    <h4>🎯 CURRENT STATUS</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin: 20px 0;">
+                        <div class="glass-panel" style="text-align: center;">
+                            <h3 id="statusTeams">8</h3>
+                            <p>Teams Alive</p>
+                        </div>
+                        <div class="glass-panel" style="text-align: center;">
+                            <h3 id="statusRound">1</h3>
+                            <p>Round</p>
+                        </div>
+                        <div class="glass-panel" style="text-align: center;">
+                            <h3 id="statusEliminated">0</h3>
+                            <p>Eliminated</p>
+                        </div>
+                        <div class="glass-panel" style="text-align: center;">
+                            <h3 id="statusPhase">Purge</h3>
+                            <p>Phase</p>
+                        </div>
+                    </div>
+                    
+                    <h4>📈 SURVIVAL PROGRESS</h4>
+                    <div class="progress-bar">
+                        <div id="progressFill" class="progress-fill" style="width: 100%"></div>
+                    </div>
+                    <p style="text-align: center;"><span id="progressText">8/8 teams remaining (100%)</span></p>
+                </div>
+            </div>
+        </div>
 
-def get_cumulative_standings():
-    """Get current cumulative standings for all active teams"""
-    standings = []
-    
-    # Start with cumulative stats if they exist
-    cumulative = st.session_state.cumulative_stats.copy()
-    
-    # Add current round results
-    for mid, res in st.session_state.results.items():
-        try:
-            if "_" in mid:
-                base = mid.split('_')[0]
-            else:
-                base = mid
+        <!-- ADMIN PANEL (Initially Hidden) -->
+        <div id="adminPanel" class="glass-panel" style="margin-top: 30px; display: none;">
+            <h3>🔐 ADMIN PANEL</h3>
             
-            if "v" in base:
-                h, a = base.split('v')
-            else:
-                continue
-        except: continue
-        
-        # Initialize teams in cumulative stats
-        if h not in cumulative:
-            cumulative[h] = {'P': 0, 'W': 0, 'D': 0, 'L': 0, 'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0}
-        if a not in cumulative:
-            cumulative[a] = {'P': 0, 'W': 0, 'D': 0, 'L': 0, 'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0}
-        
-        s_h, s_a = res[0], res[1]
-        
-        cumulative[h]['P'] += 1
-        cumulative[a]['P'] += 1
-        cumulative[h]['GF'] += s_h
-        cumulative[h]['GA'] += s_a
-        cumulative[h]['GD'] += (s_h - s_a)
-        cumulative[a]['GF'] += s_a
-        cumulative[a]['GA'] += s_h
-        cumulative[a]['GD'] += (s_a - s_h)
-        
-        if s_h > s_a:
-            cumulative[h]['W'] += 1
-            cumulative[h]['Pts'] += 3
-            cumulative[a]['L'] += 1
-        elif s_a > s_h:
-            cumulative[a]['W'] += 1
-            cumulative[a]['Pts'] += 3
-            cumulative[h]['L'] += 1
-        else:
-            cumulative[h]['D'] += 1
-            cumulative[h]['Pts'] += 1
-            cumulative[a]['D'] += 1
-            cumulative[a]['Pts'] += 1
-    
-    # Convert to list format
-    for team in st.session_state.active_teams:
-        if team in cumulative:
-            standings.append({
-                'Team': team,
-                'P': cumulative[team]['P'],
-                'W': cumulative[team]['W'],
-                'D': cumulative[team]['D'],
-                'L': cumulative[team]['L'],
-                'GF': cumulative[team]['GF'],
-                'GA': cumulative[team]['GA'],
-                'GD': cumulative[team]['GD'],
-                'Pts': cumulative[team]['Pts']
-            })
-        else:
-            standings.append({
-                'Team': team,
-                'P': 0, 'W': 0, 'D': 0, 'L': 0,
-                'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
-            })
-    
-    return standings
+            <div class="input-group">
+                <input type="password" id="adminPin" placeholder="Enter PIN (0209)">
+                <button class="btn" onclick="toggleAdmin()">UNLOCK</button>
+            </div>
+            
+            <div id="adminControls" style="display: none;">
+                <div style="margin: 20px 0;">
+                    <button class="btn" onclick="nextRound()">⏩ NEXT ROUND</button>
+                    <button class="btn" onclick="resetTournament()">🧨 RESET</button>
+                </div>
+                
+                <h4>⚙️ TEAM MANAGEMENT</h4>
+                <div class="input-group">
+                    <input type="text" id="newTeam" placeholder="New team name">
+                    <button class="btn" onclick="addTeam()">ADD TEAM</button>
+                </div>
+                
+                <div id="teamList" style="margin-top: 20px;"></div>
+            </div>
+        </div>
 
-def handle_battle_royale_elimination():
-    """Execute your exact Battle Royale protocol"""
-    standings = get_cumulative_standings()
-    
-    # Sort by Points → GD → GF
-    standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
-    
-    remaining = len(standings)
-    
-    # DETERMINE CURRENT PHASE
-    if remaining >= 5:
-        phase = "Phase 1: The Purge"
-        elim_count = 2  # Bottom 2 teams eliminated
-    elif remaining == 4:
-        phase = "Phase 2: The Squeeze"
-        elim_count = 1  # Bottom 1 team eliminated
-    elif remaining == 3:
-        phase = "Phase 3: The Standoff"
-        elim_count = 0  # Special elimination handled differently
-    elif remaining == 2:
-        phase = "Phase 4: The Grand Final"
-        elim_count = 0
-    else:
-        # Only 1 team left - CHAMPION!
-        st.session_state.champion = standings[0]['Team']
-        st.session_state.news.insert(0, f"🏆 {st.session_state.champion} is the BATTLE ROYALE CHAMPION!")
-        st.session_state.battle_phase = "CHAMPION CROWNED"
-        save_data_internal(current_player_stats)
-        st.rerun()
-        return
-    
-    # Update phase if changed
-    if phase != st.session_state.battle_phase:
-        st.session_state.battle_phase = phase
-        st.session_state.news.insert(0, f"🔁 PHASE CHANGE: {phase}")
-    
-    # Handle eliminations based on phase
-    eliminated_this_round = []
-    
-    if phase == "Phase 1: The Purge":
-        # Eliminate bottom 2 teams
-        bottom_teams = standings[-2:]
-        for team_data in bottom_teams:
-            team = team_data['Team']
-            if team in st.session_state.active_teams:
-                st.session_state.active_teams.remove(team)
-                eliminated_this_round.append(team)
-                st.session_state.eliminated_teams.append({
-                    'team': team,
-                    'round': st.session_state.round_number,
-                    'position': remaining - standings.index(team_data),
-                    'phase': phase
-                })
-        
-        if eliminated_this_round:
-            st.session_state.news.insert(0, f"💀 PURGED: {', '.join(eliminated_this_round)} eliminated!")
-    
-    elif phase == "Phase 2: The Squeeze":
-        # Eliminate bottom 1 team
-        bottom_team = standings[-1]['Team']
-        if bottom_team in st.session_state.active_teams:
-            st.session_state.active_teams.remove(bottom_team)
-            eliminated_this_round.append(bottom_team)
-            st.session_state.eliminated_teams.append({
-                'team': bottom_team,
-                'round': st.session_state.round_number,
-                'position': 4,
-                'phase': phase
-            })
-        
-        if eliminated_this_round:
-            st.session_state.news.insert(0, f"💀 SQUEEZED OUT: {bottom_team} eliminated!")
-    
-    elif phase == "Phase 3: The Standoff":
-        # Special phase: No elimination here, just generate sudden death fixtures
-        # If sudden death matches are already completed, handle elimination
-        if st.session_state.sudden_death_round >= 2:
-            # Both sudden death matches have been played
-            # Determine loser based on aggregate score
-            leader = standings[0]['Team']
-            second = standings[1]['Team']
-            third = standings[2]['Team']
-            
-            # Check results of sudden death matches
-            match1_id = f"{second}v{third}_0"
-            match2_id = f"{third}v{second}_1"
-            
-            res1 = st.session_state.results.get(match1_id, [0, 0])
-            res2 = st.session_state.results.get(match2_id, [0, 0])
-            
-            # Calculate aggregate
-            second_goals = res1[0] + res2[1]  # Second's goals in both legs
-            third_goals = res1[1] + res2[0]   # Third's goals in both legs
-            
-            if second_goals > third_goals:
-                loser = third
-                winner = second
-            elif third_goals > second_goals:
-                loser = second
-                winner = third
-            else:
-                # Tie - use penalties if recorded
-                if len(res1) > 2 and len(res2) > 2:
-                    second_pens = res1[2] + res2[3]
-                    third_pens = res1[3] + res2[2]
-                    loser = third if second_pens > third_pens else second
-                    winner = second if second_pens > third_pens else third
-                else:
-                    # Still tied - eliminate based on cumulative standings
-                    loser = third if standings[1]['Pts'] > standings[2]['Pts'] else second
-            
-            # Eliminate loser
-            if loser in st.session_state.active_teams:
-                st.session_state.active_teams.remove(loser)
-                eliminated_this_round.append(loser)
-                st.session_state.eliminated_teams.append({
-                    'team': loser,
-                    'round': st.session_state.round_number,
-                    'position': 3,
-                    'phase': phase,
-                    'reason': 'Lost Sudden Death Semi-Final'
-                })
-                st.session_state.news.insert(0, f"💀 SUDDEN DEATH: {loser} eliminated! {winner} advances to Final!")
-            
-            # Reset sudden death counter
-            st.session_state.sudden_death_round = 0
-            st.session_state.bye_team = None
-    
-    # Save cumulative stats before generating new fixtures
-    for team_data in standings:
-        team = team_data['Team']
-        if team in st.session_state.active_teams:
-            if team not in st.session_state.cumulative_stats:
-                st.session_state.cumulative_stats[team] = {}
-            
-            st.session_state.cumulative_stats[team]['P'] = team_data['P']
-            st.session_state.cumulative_stats[team]['W'] = team_data['W']
-            st.session_state.cumulative_stats[team]['D'] = team_data['D']
-            st.session_state.cumulative_stats[team]['L'] = team_data['L']
-            st.session_state.cumulative_stats[team]['GF'] = team_data['GF']
-            st.session_state.cumulative_stats[team]['GA'] = team_data['GA']
-            st.session_state.cumulative_stats[team]['GD'] = team_data['GD']
-            st.session_state.cumulative_stats[team]['Pts'] = team_data['Pts']
-    
-    # Generate next round fixtures
-    next_fixtures = generate_fixtures_for_phase(st.session_state.active_teams, phase)
-    st.session_state.fixtures = next_fixtures
-    
-    # Verify match counts (for debugging)
-    if phase == "Phase 1: The Purge":
-        match_counts = {}
-        for team in st.session_state.active_teams:
-            match_counts[team] = 0
-        for fix in next_fixtures:
-            match_counts[fix[0]] += 1
-            match_counts[fix[1]] += 1
-        
-        # Check if all teams have 2 matches
-        all_have_2 = all(count == 2 for count in match_counts.values())
-        if not all_have_2:
-            st.error(f"❌ Match distribution issue: {match_counts}")
-            # Fallback: create simple round-robin
-            teams_list = st.session_state.active_teams.copy()
-            if len(teams_list) % 2:
-                teams_list.append("BYE")
-            
-            n = len(teams_list)
-            fallback_fixtures = []
-            for i in range(n // 2):
-                if teams_list[i] != "BYE" and teams_list[n - 1 - i] != "BYE":
-                    fallback_fixtures.append((teams_list[i], teams_list[n - 1 - i]))
-            
-            # Add reverse fixtures if needed
-            if len(fallback_fixtures) < len(st.session_state.active_teams):
-                reverse_fixtures = [(b, a) for (a, b) in fallback_fixtures]
-                fallback_fixtures.extend(reverse_fixtures)
-            
-            st.session_state.fixtures = fallback_fixtures[:len(st.session_state.active_teams)]
-    
-    # Update round info
-    st.session_state.round_number += 1
-    
-    if phase == "Phase 3: The Standoff" and not eliminated_this_round:
-        st.session_state.sudden_death_round += 1
-        if st.session_state.sudden_death_round == 1:
-            st.session_state.current_round = f"SUDDEN DEATH • Leg 1 • {phase}"
-        else:
-            st.session_state.current_round = f"SUDDEN DEATH • Leg 2 • {phase}"
-    else:
-        st.session_state.current_round = f"Round {st.session_state.round_number} • {phase}"
-    
-    # Reset match data
-    st.session_state.results = {}
-    st.session_state.match_meta = {}
-    
-    # Log history
-    st.session_state.survival_history.append({
-        'round': st.session_state.round_number - 1,
-        'phase': phase,
-        'remaining': len(st.session_state.active_teams),
-        'eliminated': eliminated_this_round
-    })
-    
-    save_data_internal(current_player_stats)
-    st.rerun()
-
-def recalculate_stats():
-    """Calculate stats for display (includes cumulative stats)"""
-    t_stats = {}
-    
-    # Start with cumulative stats
-    for team, stats in st.session_state.cumulative_stats.items():
-        t_stats[team] = stats.copy()
-        t_stats[team]['Form'] = []  # Initialize form
-    
-    # Add current round results
-    for mid, res in st.session_state.results.items():
-        try:
-            if "_" in mid:
-                base = mid.split('_')[0]
-            else:
-                base = mid
-            
-            if "v" in base:
-                h, a = base.split('v')
-            else:
-                continue
-        except: continue
-        
-        # Initialize if not exists
-        if h not in t_stats:
-            t_stats[h] = {'P':0, 'W':0, 'D':0, 'L':0, 'GF':0, 'GA':0, 'GD':0, 'Pts':0, 'Form': []}
-        if a not in t_stats:
-            t_stats[a] = {'P':0, 'W':0, 'D':0, 'L':0, 'GF':0, 'GA':0, 'GD':0, 'Pts':0, 'Form': []}
-        
-        s_h, s_a = res[0], res[1]
-        
-        t_stats[h]['P'] += 1; t_stats[a]['P'] += 1
-        t_stats[h]['GF'] += s_h; t_stats[h]['GA'] += s_a; t_stats[h]['GD'] += (s_h - s_a)
-        t_stats[a]['GF'] += s_a; t_stats[a]['GA'] += s_h; t_stats[a]['GD'] += (s_a - s_h)
-
-        if s_h > s_a:
-            t_stats[h]['W'] += 1; t_stats[h]['Pts'] += 3; t_stats[a]['L'] += 1
-            t_stats[h]['Form'].append('W'); t_stats[a]['Form'].append('L')
-        elif s_a > s_h:
-            t_stats[a]['W'] += 1; t_stats[a]['Pts'] += 3; t_stats[h]['L'] += 1
-            t_stats[a]['Form'].append('W'); t_stats[h]['Form'].append('L')
-        else:
-            t_stats[h]['D'] += 1; t_stats[h]['Pts'] += 1; t_stats[a]['D'] += 1; t_stats[a]['Pts'] += 1
-            t_stats[h]['Form'].append('D'); t_stats[a]['Form'].append('D')
-    
-    # Player stats (unchanged)
-    p_stats = {} 
-    if 'legacy_stats' in st.session_state:
-        for key, s in st.session_state.legacy_stats.items():
-            name = key
-            team = "Unknown"
-            if "('" in key:
-                try:
-                    clean = key.replace("('", "").replace("')", "").replace("', '", "|")
-                    name, team = clean.split("|")
-                except: pass
-            elif isinstance(s, dict) and 'Team' in s:
-                team = s['Team']
-            
-            uid = (name, team)
-            if uid not in p_stats: p_stats[uid] = {'G':0, 'A':0, 'R':0}
-            if isinstance(s, dict):
-                p_stats[uid]['G'] += s.get('G', 0)
-                p_stats[uid]['A'] += s.get('A', 0)
-                p_stats[uid]['R'] += s.get('R', 0)
-
-    for mid, res in st.session_state.results.items():
-        try:
-            if "_" in mid:
-                base = mid.split('_')[0]
-            else:
-                base = mid
-            
-            if "v" in base:
-                h, a = base.split('v')
-            else:
-                continue
-        except: continue
-        
-        meta = st.session_state.match_meta.get(mid, {})
-        def process_player_string(raw_str, team, stat_type):
-            if not raw_str: return
-            parts = raw_str.split(',')
-            for p in parts:
-                p = p.strip()
-                if not p: continue
-                count = 1
-                name = p
-                m_br = re.search(r'^(.*?)\s*\((\d+)\)$', p)
-                m_x = re.search(r'^(.*?)\s*[xX](\d+)$', p)
-                if m_br: name = m_br.group(1); count = int(m_br.group(2))
-                elif m_x: name = m_x.group(1); count = int(m_x.group(2))
-                name = name.strip().title()
-                uid = (name, team)
-                if uid not in p_stats: p_stats[uid] = {'G':0, 'A':0, 'R':0}
-                p_stats[uid][stat_type] += count
-
-        process_player_string(meta.get('h_s', ''), h, 'G')
-        process_player_string(meta.get('a_s', ''), a, 'G')
-        process_player_string(meta.get('h_a', ''), h, 'A')
-        process_player_string(meta.get('a_a', ''), a, 'A')
-        process_player_string(meta.get('h_r', ''), h, 'R')
-        process_player_string(meta.get('a_r', ''), a, 'R')
-
-    return t_stats, p_stats
-
-if 'init' not in st.session_state:
-    load_data()
-    st.session_state.init = True
-
-init_defaults()
-current_team_stats, current_player_stats = recalculate_stats()
-
-# --- 🏆 HEADER ---
-st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
-
-# Special Battle Royale header
-if "Survival" in st.session_state.format:
-    st.markdown(f"""
-    <div style="text-align: center; margin: 20px 0; padding: 15px; background: linear-gradient(90deg, #000 0%, #dc2626 50%, #000 100%); border-radius: 10px;">
-        <h2 style="color: white; font-family: 'Teko'; margin: 0;">💀 BATTLE ROYALE PROTOCOL</h2>
-        <p style="color: #fca5a5; font-family: 'Rajdhani'; margin: 5px 0 0 0;">"Survive the Cut. Trust No One."</p>
+        <div style="text-align: center; padding: 20px; color: #475569; border-top: 1px solid #1e293b; margin-top: 50px;">
+            OFFICIAL DLS TOURNAMENT ENGINE<br>
+            WRITTEN AND DESIGNED BY <span style="color: #3b82f6; font-weight: bold;">OLUWATIMILEYIN IGBINLOLA</span>
+        </div>
     </div>
-    """, unsafe_allow_html=True)
 
-if st.session_state.champion:
-    st.markdown(f'<div class="subtitle" style="color:#FFD700">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
-else:
-    subtitle = f"{st.session_state.current_round}"
-    if "Survival" in st.session_state.format:
-        phase_badge = ""
-        if "Phase 1" in st.session_state.battle_phase:
-            phase_badge = '<span class="phase-badge phase-1">THE PURGE (2 matches each)</span>'
-        elif "Phase 2" in st.session_state.battle_phase:
-            phase_badge = '<span class="phase-badge phase-2">THE SQUEEZE (2 matches each)</span>'
-        elif "Phase 3" in st.session_state.battle_phase:
-            phase_badge = '<span class="phase-badge phase-3">THE STANDOFF</span>'
-        elif "Phase 4" in st.session_state.battle_phase:
-            phase_badge = '<span class="phase-badge phase-4">GRAND FINAL</span>'
-        
-        subtitle = f"Round {st.session_state.round_number} • {st.session_state.battle_phase} {phase_badge}"
-    
-    st.markdown(f'<div class="subtitle">{subtitle}</div>', unsafe_allow_html=True)
+    <script>
+        // ========== DATA STORAGE ==========
+        let tournamentData = {
+            teams: ['Barcelona', 'Real Madrid', 'Manchester City', 'Liverpool', 'Bayern Munich', 'PSG', 'Chelsea', 'Juventus'],
+            badges: ['🦁', '🦅', '🐺', '🐉', '🦈', '🐍', '🐻', '🐝'],
+            activeTeams: ['Barcelona', 'Real Madrid', 'Manchester City', 'Liverpool', 'Bayern Munich', 'PSG', 'Chelsea', 'Juventus'],
+            eliminatedTeams: [],
+            round: 1,
+            phase: 'Phase 1: The Purge',
+            champion: null,
+            cumulativeStats: {},
+            playerStats: {},
+            fixtures: [],
+            results: {},
+            isBattleRoyale: true
+        };
 
-# --- 🔒 SIDEBAR ---
-with st.sidebar:
-    st.markdown("### 🔐 MANAGER ACCESS")
-    
-    if not st.session_state.admin_unlock:
-        pin = st.text_input("ENTER PIN", type="password")
-        if pin == "0209": 
-            st.session_state.admin_unlock = True
-            st.rerun()
-    
-    if st.session_state.admin_unlock:
-        st.success("ACCESS GRANTED")
-        if st.button("🔒 LOGOUT"):
-            st.session_state.admin_unlock = False
-            st.rerun()
+        // Initialize data on load
+        function initializeData() {
+            // Load from localStorage if available
+            const saved = localStorage.getItem('dlsUltraData');
+            if (saved) {
+                tournamentData = JSON.parse(saved);
+            } else {
+                // Initialize cumulative stats
+                tournamentData.teams.forEach(team => {
+                    tournamentData.cumulativeStats[team] = {
+                        P: 0, W: 0, D: 0, L: 0,
+                        GF: 0, GA: 0, GD: 0, Pts: 0
+                    };
+                });
+                
+                // Generate first round fixtures
+                generateFixtures();
+                saveData();
+            }
+            
+            updateDisplay();
+        }
 
-        st.markdown("---")
-        if st.session_state.started and not st.session_state.champion:
-            if st.button("⏩ EXECUTE ELIMINATION & NEXT ROUND"): 
-                if "Survival" in st.session_state.format:
-                    handle_battle_royale_elimination()
-                else:
-                    # Original logic for other formats
-                    st.session_state.team_history = copy.deepcopy(current_team_stats)
+        // Save data to localStorage
+        function saveData() {
+            localStorage.setItem('dlsUltraData', JSON.stringify(tournamentData));
+        }
+
+        // ========== DISPLAY FUNCTIONS ==========
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all tab buttons
+            document.querySelectorAll('.tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            
+            // Activate corresponding button
+            event.target.classList.add('active');
+            
+            // Update tab content
+            updateTabContent(tabName);
+        }
+
+        function updateTabContent(tabName) {
+            switch(tabName) {
+                case 'standings':
+                    updateStandings();
+                    break;
+                case 'matches':
+                    updateMatches();
+                    break;
+                case 'stats':
+                    updateStats();
+                    break;
+                case 'info':
+                    updateInfo();
+                    break;
+            }
+        }
+
+        function updateDisplay() {
+            // Update header
+            if (tournamentData.isBattleRoyale) {
+                document.getElementById('battleRoyaleHeader').style.display = 'block';
+            }
+            
+            // Update champion display
+            if (tournamentData.champion) {
+                document.getElementById('championDisplay').style.display = 'block';
+                document.getElementById('championName').textContent = tournamentData.champion;
+            } else {
+                document.getElementById('championDisplay').style.display = 'none';
+            }
+            
+            // Update round info
+            document.getElementById('currentRound').textContent = 
+                `Round ${tournamentData.round} • ${tournamentData.phase}`;
+            
+            // Update all tabs
+            updateStandings();
+            updateMatches();
+            updateStats();
+            updateInfo();
+            
+            // Update filter dropdown
+            updateTeamFilter();
+        }
+
+        // ========== STANDINGS TAB ==========
+        function updateStandings() {
+            const tableBody = document.getElementById('standingsTable');
+            const teamsAlive = document.getElementById('teamsAlive');
+            const dropZoneWarning = document.getElementById('dropZoneWarning');
+            
+            // Clear table
+            tableBody.innerHTML = '';
+            
+            // Get standings data
+            const standings = [];
+            tournamentData.activeTeams.forEach(team => {
+                if (tournamentData.cumulativeStats[team]) {
+                    standings.push({
+                        team: team,
+                        ...tournamentData.cumulativeStats[team]
+                    });
+                }
+            });
+            
+            // Sort by Points → GD → GF
+            standings.sort((a, b) => {
+                if (b.Pts !== a.Pts) return b.Pts - a.Pts;
+                if (b.GD !== a.GD) return b.GD - a.GD;
+                return b.GF - a.GF;
+            });
+            
+            // Update teams alive count
+            teamsAlive.textContent = tournamentData.activeTeams.length;
+            
+            // Update drop zone warning
+            if (tournamentData.phase === 'Phase 1: The Purge' && tournamentData.activeTeams.length >= 5) {
+                dropZoneWarning.innerHTML = '⚠️ <strong>DROP ZONE:</strong> Bottom 2 teams will be eliminated after this round!';
+                dropZoneWarning.style.display = 'block';
+            } else if (tournamentData.phase === 'Phase 2: The Squeeze') {
+                dropZoneWarning.innerHTML = '⚠️ <strong>DROP ZONE:</strong> Bottom team will be eliminated after this round!';
+                dropZoneWarning.style.display = 'block';
+            } else {
+                dropZoneWarning.style.display = 'none';
+            }
+            
+            // Populate table
+            standings.forEach((teamData, index) => {
+                const row = document.createElement('tr');
+                
+                // Determine if team is in drop zone
+                const isDropZone = (tournamentData.phase === 'Phase 1: The Purge' && index >= standings.length - 2) ||
+                                   (tournamentData.phase === 'Phase 2: The Squeeze' && index === standings.length - 1);
+                
+                if (isDropZone) {
+                    row.classList.add('drop-zone');
+                }
+                
+                const badgeIndex = tournamentData.teams.indexOf(teamData.team);
+                const badge = badgeIndex >= 0 ? tournamentData.badges[badgeIndex] : '🛡️';
+                
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td><span class="team-badge">${badge}</span> ${teamData.team}</td>
+                    <td>${teamData.P}</td>
+                    <td>${teamData.W}</td>
+                    <td>${teamData.D}</td>
+                    <td>${teamData.L}</td>
+                    <td>${teamData.GF}</td>
+                    <td>${teamData.GA}</td>
+                    <td>${teamData.GD}</td>
+                    <td><strong>${teamData.Pts}</strong></td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+            
+            // Update eliminated teams section
+            updateEliminatedTeams();
+        }
+
+        function updateEliminatedTeams() {
+            const eliminatedSection = document.getElementById('eliminatedSection');
+            const eliminatedList = document.getElementById('eliminatedList');
+            
+            if (tournamentData.eliminatedTeams.length > 0) {
+                eliminatedSection.style.display = 'block';
+                eliminatedList.innerHTML = tournamentData.eliminatedTeams
+                    .map(team => `<div style="padding: 5px; color: #ef4444;">💀 ${team}</div>`)
+                    .join('');
+            } else {
+                eliminatedSection.style.display = 'none';
+            }
+        }
+
+        // ========== MATCHES TAB ==========
+        function updateMatches() {
+            const matchesList = document.getElementById('matchesList');
+            
+            if (tournamentData.fixtures.length === 0) {
+                matchesList.innerHTML = '<div class="glass-panel" style="text-align: center;">No matches scheduled for this round.</div>';
+                return;
+            }
+            
+            matchesList.innerHTML = '';
+            
+            tournamentData.fixtures.forEach((fixture, index) => {
+                const [home, away] = fixture;
+                const matchId = `${home}_${away}_${index}`;
+                const result = tournamentData.results[matchId] || null;
+                
+                const matchCard = document.createElement('div');
+                matchCard.className = 'match-card glass-panel';
+                
+                const homeBadgeIndex = tournamentData.teams.indexOf(home);
+                const awayBadgeIndex = tournamentData.teams.indexOf(away);
+                const homeBadge = homeBadgeIndex >= 0 ? tournamentData.badges[homeBadgeIndex] : '🛡️';
+                const awayBadge = awayBadgeIndex >= 0 ? tournamentData.badges[awayBadgeIndex] : '🛡️';
+                
+                matchCard.innerHTML = `
+                    <div style="flex: 1; text-align: right;">
+                        <h3>${home} ${homeBadge}</h3>
+                    </div>
+                    <div class="match-score">
+                        ${result ? `${result[0]} - ${result[1]}` : 'VS'}
+                    </div>
+                    <div style="flex: 1; text-align: left;">
+                        <h3>${awayBadge} ${away}</h3>
+                    </div>
+                `;
+                
+                matchesList.appendChild(matchCard);
+            });
+        }
+
+        function updateTeamFilter() {
+            const filter = document.getElementById('teamFilter');
+            filter.innerHTML = '<option value="all">All Teams</option>';
+            
+            tournamentData.activeTeams.forEach(team => {
+                const option = document.createElement('option');
+                option.value = team;
+                option.textContent = team;
+                filter.appendChild(option);
+            });
+        }
+
+        function filterMatches() {
+            const selectedTeam = document.getElementById('teamFilter').value;
+            const matches = document.querySelectorAll('.match-card');
+            
+            matches.forEach(match => {
+                if (selectedTeam === 'all') {
+                    match.style.display = 'flex';
+                } else {
+                    const matchText = match.textContent;
+                    if (matchText.includes(selectedTeam)) {
+                        match.style.display = 'flex';
+                    } else {
+                        match.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        // ========== STATS TAB ==========
+        function updateStats() {
+            // Process player stats from results
+            const playerStats = {};
+            
+            // Collect stats from all results
+            Object.entries(tournamentData.results).forEach(([matchId, score]) => {
+                // Extract teams from matchId
+                const parts = matchId.split('_');
+                const home = parts[0];
+                const away = parts[1];
+                
+                // In a real app, you'd parse actual player stats here
+                // For demo, we'll create some sample stats
+                if (Math.random() > 0.5) {
+                    const homeScorer = `Player${Math.floor(Math.random() * 10)}`;
+                    const playerId = `${homeScorer}|${home}`;
                     
-                    wins = []
-                    for i, f in enumerate(st.session_state.fixtures):
-                        if len(f) < 2: continue
-                        h, a = f[0], f[1]
-                        mid = f"{h}v{a}_{i}"
-                        r = st.session_state.results.get(mid)
-                        if not r: wins.append(random.choice([h, a]))
-                        else:
-                            if r[0] > r[1]: wins.append(h)
-                            elif r[1] > r[0]: wins.append(a)
-                            elif len(r)>2 and r[2]>r[3]: wins.append(h)
-                            else: wins.append(a)
-                    if len(wins) == 1: st.session_state.champion = wins[0]
-                    else:
-                        nxt = []
-                        for i in range(0, len(wins), 2):
-                            if i+1 < len(wins): nxt.append((wins[i], wins[i+1]))
-                        st.session_state.fixtures = nxt; st.session_state.results = {}; st.session_state.match_meta = {}
-                        st.session_state.current_round = "NEXT ROUND"
-                    save_data_internal(current_player_stats); st.rerun()
+                    if (!playerStats[playerId]) {
+                        playerStats[playerId] = { name: homeScorer, team: home, G: 0, A: 0, R: 0 };
+                    }
+                    playerStats[playerId].G += Math.floor(Math.random() * 3) + 1;
+                }
+            });
+            
+            // Convert to array and sort
+            const statsArray = Object.values(playerStats);
+            const topScorers = [...statsArray].sort((a, b) => b.G - a.G);
+            const topAssists = [...statsArray].sort((a, b) => b.A - a.A);
+            
+            // Update Golden Boot
+            const goldenBoot = document.getElementById('topScorer');
+            if (topScorers.length > 0) {
+                goldenBoot.innerHTML = `${topScorers[0].name} (${topScorers[0].team}) - ${topScorers[0].G} goals`;
+                goldenBoot.style.color = '#fbbf24';
+            } else {
+                goldenBoot.textContent = 'No goals recorded yet';
+                goldenBoot.style.color = 'white';
+            }
+            
+            // Update goals table
+            const goalsTable = document.getElementById('goalsTable');
+            goalsTable.innerHTML = '';
+            
+            if (topScorers.length > 0) {
+                topScorers.slice(0, 5).forEach(player => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${player.name}</td>
+                        <td>${player.team}</td>
+                        <td><strong>${player.G}</strong></td>
+                    `;
+                    goalsTable.appendChild(row);
+                });
+            } else {
+                goalsTable.innerHTML = '<tr><td colspan="3" style="text-align: center;">No goals recorded yet</td></tr>';
+            }
+            
+            // Update assists table
+            const assistsTable = document.getElementById('assistsTable');
+            assistsTable.innerHTML = '';
+            
+            if (topAssists.length > 0) {
+                topAssists.slice(0, 5).forEach(player => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${player.name}</td>
+                        <td>${player.team}</td>
+                        <td><strong>${player.A}</strong></td>
+                    `;
+                    assistsTable.appendChild(row);
+                });
+            } else {
+                assistsTable.innerHTML = '<tr><td colspan="3" style="text-align: center;">No assists recorded yet</td></tr>';
+            }
+        }
 
-        st.markdown("---")
-        st.markdown("### ⚙️ TEAM EDITOR")
-        new_team = st.text_input("REGISTER NEW CLUB")
-        
-        if st.button("ADD CLUB"):
-            if new_team and new_team not in st.session_state.teams:
-                st.session_state.teams.append(new_team)
-                st.session_state.team_badges[new_team] = random.choice(BADGE_POOL)
-                
-                if st.session_state.started:
-                    st.session_state.active_teams.append(new_team)
+        // ========== INFO TAB ==========
+        function updateInfo() {
+            // Update status cards
+            document.getElementById('statusTeams').textContent = tournamentData.activeTeams.length;
+            document.getElementById('statusRound').textContent = tournamentData.round;
+            document.getElementById('statusEliminated').textContent = tournamentData.eliminatedTeams.length;
+            document.getElementById('statusPhase').textContent = tournamentData.phase.split(':')[1]?.trim() || tournamentData.phase;
+            
+            // Update progress bar
+            const totalTeams = tournamentData.teams.length;
+            const remainingTeams = tournamentData.activeTeams.length;
+            const progress = (remainingTeams / totalTeams) * 100;
+            
+            document.getElementById('progressFill').style.width = `${progress}%`;
+            document.getElementById('progressText').textContent = 
+                `${remainingTeams}/${totalTeams} teams remaining (${Math.round(progress)}%)`;
+        }
+
+        function toggleSection(sectionId) {
+            // Hide all sections
+            document.querySelectorAll('.section-content').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Show selected section
+            document.getElementById(sectionId).style.display = 'block';
+        }
+
+        // ========== TOURNAMENT LOGIC ==========
+        function generateFixtures() {
+            const teams = [...tournamentData.activeTeams];
+            const fixtures = [];
+            
+            // Shuffle teams
+            for (let i = teams.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [teams[i], teams[j]] = [teams[j], teams[i]];
+            }
+            
+            // Create pairs (2 matches each for Phase 1)
+            for (let i = 0; i < teams.length; i += 2) {
+                if (i + 1 < teams.length) {
+                    fixtures.push([teams[i], teams[i + 1]]);
                     
-                    if "Survival" in st.session_state.format:
-                        # In Battle Royale, new team starts with 0 cumulative points
-                        st.session_state.cumulative_stats[new_team] = {
-                            'P': 0, 'W': 0, 'D': 0, 'L': 0, 
-                            'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
-                        }
-                        st.toast(f"💀 {new_team} enters the Battle Royale!")
-                    else:
-                        st.toast(f"✅ {new_team} joined!")
-                
-                save_data_internal(current_player_stats); st.rerun()
-
-        edit_target = st.selectbox("SELECT CLUB", ["Select..."] + st.session_state.teams)
-        if edit_target != "Select...":
-            c1, c2 = st.columns(2)
-            if c1.button("🗑️ DELETE"):
-                st.session_state.teams.remove(edit_target)
-                if edit_target in st.session_state.active_teams: st.session_state.active_teams.remove(edit_target)
-                save_data_internal(current_player_stats); st.rerun()
-            rename_val = c2.text_input("RENAME TO", value=edit_target)
-            if c2.button("RENAME"):
-                idx = st.session_state.teams.index(edit_target)
-                st.session_state.teams[idx] = rename_val
-                st.session_state.team_badges[rename_val] = st.session_state.team_badges.pop(edit_target)
-                save_data_internal(current_player_stats); st.rerun()
-
-        st.markdown("---")
-        st.markdown("### 💾 DATA MANAGEMENT")
-        
-        safe_export_stats = {}
-        for k, v in current_player_stats.items():
-            safe_export_stats[str(k)] = v
+                    // Add return fixture for Phase 1
+                    if (tournamentData.phase === 'Phase 1: The Purge') {
+                        fixtures.push([teams[i + 1], teams[i]]);
+                    }
+                }
+            }
             
-        current_data = json.dumps({
-            "teams": st.session_state.teams, "format": st.session_state.format, 
-            "current_round": st.session_state.current_round, "fixtures": st.session_state.fixtures, 
-            "results": st.session_state.results, "match_meta": st.session_state.match_meta, 
-            "started": st.session_state.started, "groups": st.session_state.groups, 
-            "champion": st.session_state.champion, "active_teams": st.session_state.active_teams, 
-            "team_badges": st.session_state.team_badges, "news": st.session_state.news,
-            "legacy_stats": st.session_state.legacy_stats, "player_stats": safe_export_stats,
-            "team_history": st.session_state.team_history,
-            "eliminated_teams": st.session_state.eliminated_teams,
-            "round_number": st.session_state.round_number,
-            "survival_history": st.session_state.survival_history,
-            "battle_phase": st.session_state.battle_phase,
-            "bye_team": st.session_state.bye_team,
-            "cumulative_stats": st.session_state.cumulative_stats,
-            "sudden_death_round": st.session_state.sudden_death_round,
-            "phase1_match_count": st.session_state.phase1_match_count
-        })
-        st.download_button("📥 DOWNLOAD BACKUP", data=current_data, file_name="dls_backup.json", mime="application/json")
-        uploaded = st.file_uploader("📤 RESTORE BACKUP", type=['json'])
-        if uploaded and st.button("⚠️ RESTORE NOW"):
-            data = json.load(uploaded)
-            st.session_state.teams = data["teams"]
-            st.session_state.fixtures = [tuple(f) for f in data["fixtures"]] if isinstance(data["fixtures"], list) else []
-            st.session_state.results = data["results"] if isinstance(data["results"], dict) else {}
-            st.session_state.match_meta = data.get("match_meta", {}) if isinstance(data.get("match_meta"), dict) else {}
-            st.session_state.started = data.get("started", False)
-            st.session_state.groups = data.get("groups", {})
-            st.session_state.current_round = data.get("current_round", "Group Stage")
-            st.session_state.champion = data.get("champion", None)
-            st.session_state.active_teams = data.get("active_teams", [])
-            st.session_state.team_badges = data.get("team_badges", {})
-            st.session_state.news = data.get("news", [])
-            st.session_state.legacy_stats = data.get("legacy_stats", data.get("player_stats", {}))
-            st.session_state.team_history = data.get("team_history", {})
-            st.session_state.eliminated_teams = data.get("eliminated_teams", [])
-            st.session_state.round_number = data.get("round_number", 1)
-            st.session_state.survival_history = data.get("survival_history", [])
-            st.session_state.battle_phase = data.get("battle_phase", "Phase 1: The Purge")
-            st.session_state.bye_team = data.get("bye_team", None)
-            st.session_state.cumulative_stats = data.get("cumulative_stats", {})
-            st.session_state.sudden_death_round = data.get("sudden_death_round", 0)
-            st.session_state.phase1_match_count = data.get("phase1_match_count", 2)
-            save_data_internal(current_player_stats); st.rerun()
-        if st.button("🧨 FACTORY RESET"):
-            st.session_state.clear()
-            if os.path.exists(DB_FILE): os.remove(DB_FILE)
-            st.rerun()
+            tournamentData.fixtures = fixtures;
+            tournamentData.results = {};
+        }
 
-# --- 🎮 MAIN INTERFACE ---
-if not st.session_state.started:
-    st.markdown(f"<div class='glass-panel' style='text-align:center'><h3>CLUBS READY: {len(st.session_state.teams)}</h3></div>", unsafe_allow_html=True)
-    if st.session_state.teams:
-        cols = st.columns(4)
-        for i, t in enumerate(st.session_state.teams):
-            b = st.session_state.team_badges.get(t, "🛡️")
-            with cols[i%4]: st.markdown(f"<div class='glass-panel' style='text-align:center'><h1>{b}</h1><h3>{t}</h3></div>", unsafe_allow_html=True)
-
-    if st.session_state.admin_unlock: 
-        st.markdown("### 🏆 SELECT FORMAT")
-        fmt = st.radio("", ["Home & Away League", "World Cup (Groups + Knockout)", "Classic Knockout", "Survival Mode (Battle Royale)"], horizontal=True)
-        if st.button("🚀 INITIALIZE SEASON"):
-            if len(st.session_state.teams) < 2: st.error("Need 2+ Teams")
-            else:
-                st.session_state.format = fmt
-                st.session_state.current_round = "Group Stage" if "World" in fmt else ("League Phase" if "League" in fmt else ("Round 1" if "Survival" in fmt else "Knockout Round"))
-                st.session_state.active_teams = st.session_state.teams.copy()
+        function simulateRound() {
+            // Simulate results for all fixtures
+            tournamentData.fixtures.forEach((fixture, index) => {
+                const [home, away] = fixture;
+                const matchId = `${home}_${away}_${index}`;
                 
-                if "Survival" in fmt:
-                    # Initialize Battle Royale
-                    st.session_state.eliminated_teams = []
-                    st.session_state.round_number = 1
-                    st.session_state.survival_history = []
-                    st.session_state.battle_phase = "Phase 1: The Purge"
-                    st.session_state.bye_team = None
-                    st.session_state.cumulative_stats = {}
-                    st.session_state.sudden_death_round = 0
-                    st.session_state.phase1_match_count = 2  # 2 matches each in Phase 1
+                if (!tournamentData.results[matchId]) {
+                    // Generate random scores
+                    const homeScore = Math.floor(Math.random() * 5);
+                    const awayScore = Math.floor(Math.random() * 5);
                     
-                    # Initialize cumulative stats for all teams
-                    for team in st.session_state.teams:
-                        st.session_state.cumulative_stats[team] = {
-                            'P': 0, 'W': 0, 'D': 0, 'L': 0, 
-                            'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
-                        }
+                    tournamentData.results[matchId] = [homeScore, awayScore];
                     
-                    # Generate first round fixtures (2 matches each for Phase 1)
-                    matches = generate_fixtures_for_phase(st.session_state.teams, "Phase 1: The Purge")
-                    st.session_state.fixtures = matches
-                    st.session_state.current_round = f"Round 1 • {st.session_state.battle_phase}"
+                    // Update cumulative stats
+                    updateTeamStats(home, away, homeScore, awayScore);
+                }
+            });
+            
+            saveData();
+            updateDisplay();
+        }
+
+        function updateTeamStats(home, away, homeScore, awayScore) {
+            // Initialize if needed
+            if (!tournamentData.cumulativeStats[home]) {
+                tournamentData.cumulativeStats[home] = { P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+            }
+            if (!tournamentData.cumulativeStats[away]) {
+                tournamentData.cumulativeStats[away] = { P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+            }
+            
+            // Update home team stats
+            tournamentData.cumulativeStats[home].P += 1;
+            tournamentData.cumulativeStats[home].GF += homeScore;
+            tournamentData.cumulativeStats[home].GA += awayScore;
+            tournamentData.cumulativeStats[home].GD += (homeScore - awayScore);
+            
+            // Update away team stats
+            tournamentData.cumulativeStats[away].P += 1;
+            tournamentData.cumulativeStats[away].GF += awayScore;
+            tournamentData.cumulativeStats[away].GA += homeScore;
+            tournamentData.cumulativeStats[away].GD += (awayScore - homeScore);
+            
+            // Update wins/losses/draws
+            if (homeScore > awayScore) {
+                tournamentData.cumulativeStats[home].W += 1;
+                tournamentData.cumulativeStats[home].Pts += 3;
+                tournamentData.cumulativeStats[away].L += 1;
+            } else if (awayScore > homeScore) {
+                tournamentData.cumulativeStats[away].W += 1;
+                tournamentData.cumulativeStats[away].Pts += 3;
+                tournamentData.cumulativeStats[home].L += 1;
+            } else {
+                tournamentData.cumulativeStats[home].D += 1;
+                tournamentData.cumulativeStats[home].Pts += 1;
+                tournamentData.cumulativeStats[away].D += 1;
+                tournamentData.cumulativeStats[away].Pts += 1;
+            }
+        }
+
+        function nextRound() {
+            // First simulate current round if not already done
+            if (Object.keys(tournamentData.results).length === 0) {
+                simulateRound();
+            }
+            
+            // Determine phase and handle eliminations
+            const activeCount = tournamentData.activeTeams.length;
+            
+            if (activeCount >= 5) {
+                // Phase 1: Eliminate bottom 2
+                tournamentData.phase = 'Phase 1: The Purge';
+                eliminateBottomTeams(2);
+            } else if (activeCount === 4) {
+                // Phase 2: Eliminate bottom 1
+                tournamentData.phase = 'Phase 2: The Squeeze';
+                eliminateBottomTeams(1);
+            } else if (activeCount === 3) {
+                // Phase 3: Sudden Death setup
+                tournamentData.phase = 'Phase 3: The Standoff';
+                setupSuddenDeath();
+            } else if (activeCount === 2) {
+                // Phase 4: Grand Final
+                tournamentData.phase = 'Phase 4: The Grand Final';
+                // One more round then determine champion
+            } else if (activeCount === 1) {
+                // Champion!
+                tournamentData.champion = tournamentData.activeTeams[0];
+                tournamentData.phase = 'CHAMPION CROWNED';
+            }
+            
+            // Increment round
+            tournamentData.round += 1;
+            
+            // Generate new fixtures
+            generateFixtures();
+            
+            saveData();
+            updateDisplay();
+            
+            alert(`Round ${tournamentData.round - 1} completed! Moving to ${tournamentData.phase}`);
+        }
+
+        function eliminateBottomTeams(count) {
+            // Get current standings
+            const standings = tournamentData.activeTeams.map(team => ({
+                team,
+                ...tournamentData.cumulativeStats[team]
+            }));
+            
+            // Sort by Points → GD → GF
+            standings.sort((a, b) => {
+                if (b.Pts !== a.Pts) return b.Pts - a.Pts;
+                if (b.GD !== a.GD) return b.GD - a.GD;
+                return b.GF - a.GF;
+            });
+            
+            // Eliminate bottom teams
+            const eliminated = standings.slice(-count);
+            eliminated.forEach(teamData => {
+                const index = tournamentData.activeTeams.indexOf(teamData.team);
+                if (index > -1) {
+                    tournamentData.activeTeams.splice(index, 1);
+                    tournamentData.eliminatedTeams.push(teamData.team);
+                }
+            });
+        }
+
+        function setupSuddenDeath() {
+            // In Phase 3, only 2nd vs 3rd play
+            const standings = tournamentData.activeTeams.map(team => ({
+                team,
+                ...tournamentData.cumulativeStats[team]
+            }));
+            
+            standings.sort((a, b) => {
+                if (b.Pts !== a.Pts) return b.Pts - a.Pts;
+                if (b.GD !== a.GD) return b.GD - a.GD;
+                return b.GF - a.GF;
+            });
+            
+            // 1st gets bye, 2nd vs 3rd play
+            tournamentData.fixtures = [
+                [standings[1].team, standings[2].team],
+                [standings[2].team, standings[1].team]  // Return leg
+            ];
+        }
+
+        // ========== ADMIN FUNCTIONS ==========
+        function toggleAdmin() {
+            const pin = document.getElementById('adminPin').value;
+            if (pin === '0209') {
+                document.getElementById('adminControls').style.display = 'block';
+                document.getElementById('adminPanel').style.borderColor = '#10b981';
+                updateTeamList();
+            } else {
+                alert('Incorrect PIN');
+            }
+        }
+
+        function updateTeamList() {
+            const teamList = document.getElementById('teamList');
+            teamList.innerHTML = '';
+            
+            tournamentData.teams.forEach(team => {
+                const div = document.createElement('div');
+                div.className = 'glass-panel';
+                div.style.margin = '10px 0';
+                div.innerHTML = `
+                    ${team} 
+                    <button class="btn btn-danger" onclick="removeTeam('${team}')" style="float: right;">REMOVE</button>
+                `;
+                teamList.appendChild(div);
+            });
+        }
+
+        function addTeam() {
+            const newTeam = document.getElementById('newTeam').value.trim();
+            if (newTeam && !tournamentData.teams.includes(newTeam)) {
+                tournamentData.teams.push(newTeam);
+                tournamentData.badges.push('🛡️');
+                tournamentData.activeTeams.push(newTeam);
+                tournamentData.cumulativeStats[newTeam] = {
+                    P: 0, W: 0, D: 0, L: 0,
+                    GF: 0, GA: 0, GD: 0, Pts: 0
+                };
+                
+                document.getElementById('newTeam').value = '';
+                saveData();
+                updateTeamList();
+                updateDisplay();
+                alert(`${newTeam} added to tournament!`);
+            }
+        }
+
+        function removeTeam(team) {
+            if (confirm(`Remove ${team} from tournament?`)) {
+                const index = tournamentData.teams.indexOf(team);
+                if (index > -1) {
+                    tournamentData.teams.splice(index, 1);
+                    tournamentData.badges.splice(index, 1);
                     
-                    # Check and verify match counts
-                    match_counts = {}
-                    for team in st.session_state.teams:
-                        match_counts[team] = 0
-                    for fix in matches:
-                        match_counts[fix[0]] += 1
-                        match_counts[fix[1]] += 1
+                    const activeIndex = tournamentData.activeTeams.indexOf(team);
+                    if (activeIndex > -1) {
+                        tournamentData.activeTeams.splice(activeIndex, 1);
+                    }
                     
-                    st.success(f"💀 BATTLE ROYALE INITIALIZED! 2 matches per team. Points carry over forever. Bottom 2 eliminated each round!")
-                
-                elif "League" in fmt: 
-                    matches = list(itertools.permutations(st.session_state.teams, 2))
-                    random.shuffle(matches)
-                elif "World Cup" in fmt:
-                    shuffled = st.session_state.teams.copy(); random.shuffle(shuffled); groups = {}; group_names = "ABCDEFGH"
-                    for i in range(0, len(shuffled), 4): groups[group_names[i//4]] = shuffled[i:i+4]
-                    st.session_state.groups = groups; matches = []
-                    for g, teams in groups.items(): matches.extend(list(itertools.combinations(teams, 2)))
-                elif "Knockout" in fmt:
-                    shuffled = st.session_state.teams.copy(); random.shuffle(shuffled); matches = []
-                    for i in range(0, len(shuffled), 2):
-                        if i+1 < len(shuffled): matches.append((shuffled[i], shuffled[i+1]))
-                
-                if "Survival" not in fmt:
-                    st.session_state.fixtures = matches
-                
-                st.session_state.started = True
-                save_data_internal(current_player_stats); st.rerun()
+                    delete tournamentData.cumulativeStats[team];
+                    saveData();
+                    updateTeamList();
+                    updateDisplay();
+                }
+            }
+        }
 
-else:
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 CUMULATIVE TABLE", "⚽ MATCH CENTER", "⭐ STATS", "💀 BATTLE INFO"])
+        function resetTournament() {
+            if (confirm('Reset entire tournament? All data will be lost!')) {
+                localStorage.removeItem('dlsUltraData');
+                location.reload();
+            }
+        }
 
-    with tab1:
-        def render_battle_royale_table():
-            standings = get_cumulative_standings()
+        // ========== INITIALIZATION ==========
+        window.onload = function() {
+            initializeData();
             
-            if not standings:
-                st.info("No teams remaining")
-                return
-            
-            # Sort by Points → GD → GF
-            standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
-            
-            rows = []
-            for idx, s in enumerate(standings):
-                team = s['Team']
-                badge = st.session_state.team_badges.get(team, "🛡️")
-                
-                # Determine row class based on position and phase
-                row_class = ""
-                if st.session_state.battle_phase == "Phase 1: The Purge" and idx >= len(standings) - 2:
-                    row_class = "drop-zone"
-                elif st.session_state.battle_phase == "Phase 2: The Squeeze" and idx == len(standings) - 1:
-                    row_class = "drop-zone"
-                elif st.session_state.bye_team == team:
-                    row_class = "bye-zone"
-                
-                # Create form visualization
-                form_viz = ""
-                if team in current_team_stats and 'Form' in current_team_stats[team]:
-                    for x in current_team_stats[team]['Form'][-5:]:
-                        if x == 'W': form_viz += "✅"
-                        elif x == 'L': form_viz += "🟥"
-                        else: form_viz += "⬜"
-                
-                rows.append({
-                    "#": idx + 1,
-                    "Club": f"{badge} {team}",
-                    "P": s['P'], "W": s['W'], "D": s['D'], "L": s['L'], 
-                    "GF": s['GF'], "GA": s['GA'], "GD": s['GD'], 
-                    "Pts": s['Pts'], "Form": form_viz,
-                    "_row_class": row_class
-                })
-            
-            if rows:
-                df = pd.DataFrame(rows)
-                
-                # Highlight drop zone
-                st.markdown(f"**Teams Alive:** {len(st.session_state.active_teams)} | **Current Phase:** {st.session_state.battle_phase}")
-                
-                if st.session_state.battle_phase == "Phase 1: The Purge":
-                    st.warning(f"⚠️ **DROP ZONE:** Bottom 2 teams will be eliminated after this round! (2 matches each)")
-                elif st.session_state.battle_phase == "Phase 2: The Squeeze":
-                    st.warning(f"⚠️ **DROP ZONE:** Bottom team will be eliminated after this round! (2 matches each)")
-                elif st.session_state.battle_phase == "Phase 3: The Standoff":
-                    st.info(f"👑 **BYE:** {st.session_state.bye_team} gets automatic pass to Final!")
-                    st.warning(f"⚔️ **SUDDEN DEATH:** 2nd vs 3rd playing elimination match!")
-                
-                st.dataframe(df[['#', 'Club', 'P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts', 'Form']], 
-                           hide_index=True, use_container_width=True,
-                           column_config={
-                               "#": st.column_config.NumberColumn(width="small"),
-                               "Pts": st.column_config.ProgressColumn("Pts", format="%d", min_value=0, max_value=max(100, df['Pts'].max()))
-                           })
-                
-                # Show eliminated teams
-                if st.session_state.eliminated_teams:
-                    with st.expander(f"☠️ Eliminated Teams ({len(st.session_state.eliminated_teams)})"):
-                        elim_data = []
-                        for e in st.session_state.eliminated_teams:
-                            elim_data.append({
-                                "Team": e['team'],
-                                "Round": e['round'],
-                                "Phase": e['phase'],
-                                "Position": f"{e['position']}th"
-                            })
-                        if elim_data:
-                            elim_df = pd.DataFrame(elim_data)
-                            st.dataframe(elim_df, hide_index=True, use_container_width=True)
-
-        if "Survival" in st.session_state.format:
-            render_battle_royale_table()
-        elif "League" in st.session_state.format:
-            st.markdown("### 🌍 LEAGUE TABLE")
-            # Render regular table...
-        elif "World" in st.session_state.format and "Group" in st.session_state.current_round:
-            # Render group tables...
-            pass
-        else:
-            # Render knockout bracket...
-            pass
-
-    with tab2:
-        filter_team = st.selectbox("FILTER TEAM", ["All"] + st.session_state.active_teams)
-        
-        for i, fix in enumerate(st.session_state.fixtures): 
-            if len(fix) < 2: continue
-            h, a = fix[0], fix[1]
-            
-            if filter_team != "All" and filter_team not in [h, a]: continue
-            
-            mid = f"{h}v{a}_{i}" 
-            res = st.session_state.results.get(mid)
-            
-            # Check if this is a sudden death match
-            is_sudden_death = (
-                st.session_state.battle_phase == "Phase 3: The Standoff" and 
-                st.session_state.sudden_death_round > 0
-            )
-            
-            with st.container():
-                panel_class = "glass-panel"
-                if is_sudden_death:
-                    panel_class += " sudden-death"
-                
-                st.markdown(f"<div class='{panel_class}'>", unsafe_allow_html=True)
-                c1, c2, c3 = st.columns([4, 2, 4])
-                b1 = st.session_state.team_badges.get(h, ""); b2 = st.session_state.team_badges.get(a, "")
-                
-                # Match header
-                if is_sudden_death:
-                    c1.markdown(f"<h3 style='text-align:right; color:#ff6b6b'>{h} {b1}</h3>", unsafe_allow_html=True)
-                    c3.markdown(f"<h3 style='text-align:left; color:#ff6b6b'>{b2} {a}</h3>", unsafe_allow_html=True)
-                    c2.markdown(f"<div style='text-align:center'><small>⚔️ SUDDEN DEATH • Leg {st.session_state.sudden_death_round}</small></div>", unsafe_allow_html=True)
-                else:
-                    c1.markdown(f"<h3 style='text-align:right'>{h} {b1}</h3>", unsafe_allow_html=True)
-                    c3.markdown(f"<h3 style='text-align:left'>{b2} {a}</h3>", unsafe_allow_html=True)
-                
-                # Score display
-                if res:
-                    sc = f"{res[0]} - {res[1]}"
-                    if len(res) > 2: sc += f"\n(P: {res[2]}-{res[3]})"
-                    score_color = "#ef4444" if is_sudden_death else "#3b82f6"
-                    c2.markdown(f"<h1 style='text-align:center; color:{score_color}'>{sc}</h1>", unsafe_allow_html=True)
-                else: 
-                    if is_sudden_death:
-                        c2.markdown(f"<h1 style='text-align:center; color:#ef4444'>⚔️ VS ⚔️</h1>", unsafe_allow_html=True)
-                    else:
-                        c2.markdown(f"<h1 style='text-align:center; color:#64748b'>VS</h1>", unsafe_allow_html=True)
-                
-                # Match reporting
-                if st.session_state.admin_unlock and not st.session_state.champion: 
-                    with st.expander(f"📝 REPORT MATCH {i+1}"):
-                        if is_sudden_death:
-                            st.warning("⚔️ **SUDDEN DEATH SEMI-FINAL:** Loser is ELIMINATED!")
-                        
-                        ac1, ac2 = st.columns(2)
-                        s1 = ac1.number_input(f"{h}", 0, 20, key=f"s1_{mid}") 
-                        s2 = ac2.number_input(f"{a}", 0, 20, key=f"s2_{mid}") 
-                        p1, p2 = 0, 0
-                        
-                        # Penalties for sudden death or non-league formats
-                        if (s1 == s2 and "League" not in st.session_state.format) or is_sudden_death:
-                            st.caption("Penalties (if tied)")
-                            p1 = ac1.number_input(f"P {h}", 0, 20, key=f"p1_{mid}")
-                            p2 = ac2.number_input(f"P {a}", 0, 20, key=f"p2_{mid}")
-
-                        sc1, sc2 = st.columns(2)
-                        prev = st.session_state.match_meta.get(mid, {})
-                        gs1 = sc1.text_input("Scorers (Home)", value=prev.get('h_s',''), key=f"g1_{mid}", placeholder="Messi (2), ...")
-                        gs2 = sc2.text_input("Scorers (Away)", value=prev.get('a_s',''), key=f"g2_{mid}")
-                        ha = sc1.text_input("Ast H", value=prev.get('h_a',''), key=f"ah_{mid}")
-                        aa = sc2.text_input("Ast A", value=prev.get('a_a',''), key=f"aa_{mid}")
-                        hr = sc1.text_input("Red H", value=prev.get('h_r',''), key=f"rh_{mid}")
-                        ar = sc2.text_input("Red A", value=prev.get('a_r',''), key=f"ra_{mid}")
-                        
-                        if st.button("CONFIRM RESULT", key=f"b_{mid}"):
-                            if (s1 == s2 and "League" not in st.session_state.format) or is_sudden_death:
-                                st.session_state.results[mid] = [s1, s2, p1, p2]
-                            else:
-                                st.session_state.results[mid] = [s1, s2]
-                            
-                            st.session_state.match_meta[mid] = {'h_s': gs1, 'a_s': gs2, 'h_a': ha, 'a_a': aa, 'h_r': hr, 'a_r': ar}
-                            
-                            # Update cumulative stats immediately
-                            if h in st.session_state.cumulative_stats and a in st.session_state.cumulative_stats:
-                                st.session_state.cumulative_stats[h]['P'] += 1
-                                st.session_state.cumulative_stats[a]['P'] += 1
-                                st.session_state.cumulative_stats[h]['GF'] += s1
-                                st.session_state.cumulative_stats[h]['GA'] += s2
-                                st.session_state.cumulative_stats[h]['GD'] += (s1 - s2)
-                                st.session_state.cumulative_stats[a]['GF'] += s2
-                                st.session_state.cumulative_stats[a]['GA'] += s1
-                                st.session_state.cumulative_stats[a]['GD'] += (s2 - s1)
-                                
-                                if s1 > s2:
-                                    st.session_state.cumulative_stats[h]['W'] += 1
-                                    st.session_state.cumulative_stats[h]['Pts'] += 3
-                                    st.session_state.cumulative_stats[a]['L'] += 1
-                                elif s2 > s1:
-                                    st.session_state.cumulative_stats[a]['W'] += 1
-                                    st.session_state.cumulative_stats[a]['Pts'] += 3
-                                    st.session_state.cumulative_stats[h]['L'] += 1
-                                else:
-                                    st.session_state.cumulative_stats[h]['D'] += 1
-                                    st.session_state.cumulative_stats[h]['Pts'] += 1
-                                    st.session_state.cumulative_stats[a]['D'] += 1
-                                    st.session_state.cumulative_stats[a]['Pts'] += 1
-                            
-                            save_data_internal(current_player_stats); st.success("UPDATED"); st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
-
-    with tab3:
-        if current_player_stats:
-            data = []
-            for (name, team), s in current_player_stats.items():
-                data.append({"Player": name, "Club": team, "Goals": s['G'], "Assists": s['A'], "Reds": s['R']})
-            df = pd.DataFrame(data)
-            c1, c2, c3 = st.columns(3)
-            def show_stat(col, title, key):
-                col.markdown(f"#### {title}")
-                if not df.empty:
-                    top = df.sort_values(by=key, ascending=False).head(10).reset_index(drop=True)
-                    top.index += 1
-                    col.dataframe(top[['Player', 'Club', key]], use_container_width=True)
-            show_stat(c1, "⚽ Goals", "Goals"); show_stat(c2, "👟 Assists", "Assists"); show_stat(c3, "🟥 Reds", "Reds")
-        else: st.info("No Goals Recorded Yet")
-
-    with tab4:
-        if "Survival" in st.session_state.format:
-            st.markdown("### 💀 BATTLE ROYALE PROTOCOL")
-            
-            # Protocol Rules
-            with st.expander("📜 THE CORE RULES", expanded=True):
-                st.markdown("""
-                **1. The "Cumulative" Table**
-                - Points carry over FOREVER
-                - Win 3-0 in Round 1 → carry 3 points and +3 GD into Round 2
-                - Strategy: Hoard points to stay safe from the "Drop Zone"
-                
-                **2. Matchmaking: Pure RNG**
-                - No fixed bracket
-                - After every round, all surviving teams are thrown into a hat and shuffled
-                - You could play the strongest team twice in a row, or dodge them until the end
-                - It is pure luck
-                """)
-            
-            with st.expander("🩸 THE ELIMINATION PHASES"):
-                st.markdown("""
-                **Phase 1: The Purge (5+ Teams Alive)**
-                - Bottom 2 teams eliminated EVERY ROUND
-                - **2 matches per team each round** (changed from 3 for balance)
-                - Example: 8 teams → Round 1 → 7th & 8th deleted
-                
-                **Phase 2: The Squeeze (4 Teams Alive)**
-                - Bottom 1 team eliminated per round
-                - 2 matches per team (home & away)
-                - You just have to be better than one other person
-                
-                **Phase 3: The Standoff (3 Teams Alive)**
-                - **1st Place**: Gets a BYE (Automatic pass to Grand Final)
-                - **2nd vs 3rd**: Play "Sudden Death" Semi-Final (2 legs)
-                - Loser eliminated, Winner advances to Final
-                
-                **Phase 4: The Grand Final (2 Teams Alive)**
-                - Final two survivors play one last match
-                - Highest points total at the end wins the crown
-                """)
-            
-            with st.expander("📊 TIE-BREAKERS (How to stay alive)"):
-                st.markdown("""
-                If teams are level on points near the Drop Zone:
-                1. **Points** (Highest wins)
-                2. **Goal Difference** (Better GD wins)
-                3. **Goals For** (Most goals scored wins)
-                4. **Head-to-Head** (If applicable)
-                """)
-            
-            # Current Status
-            st.markdown("### 🎯 CURRENT STATUS")
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Teams Alive", len(st.session_state.active_teams))
-            with col2:
-                st.metric("Round", st.session_state.round_number)
-            with col3:
-                st.metric("Eliminated", len(st.session_state.eliminated_teams))
-            with col4:
-                st.metric("Phase", st.session_state.battle_phase.split(":")[0])
-            
-            # Show current match count info
-            if st.session_state.battle_phase == "Phase 1: The Purge":
-                st.info(f"📊 **Current Round:** Each team plays **2 matches** (balanced scheduling)")
-            
-            # News Feed
-            if st.session_state.news:
-                st.markdown("### 📰 BATTLE NEWS")
-                for news_item in st.session_state.news[:5]:  # Show last 5 news items
-                    st.markdown(f"• {news_item}")
-            
-            # Survival Progress
-            st.markdown("### 📈 SURVIVAL PROGRESS")
-            total_start = len(st.session_state.teams)
-            current = len(st.session_state.active_teams)
-            
-            if total_start > 0:
-                progress = current / total_start
-                st.progress(progress, text=f"{current}/{total_start} teams remaining ({int(progress*100)}%)")
-            
-            # Show who's at risk
-            if st.session_state.active_teams and st.session_state.battle_phase in ["Phase 1: The Purge", "Phase 2: The Squeeze"]:
-                standings = get_cumulative_standings()
-                standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
-                
-                if st.session_state.battle_phase == "Phase 1: The Purge" and len(standings) >= 5:
-                    at_risk = standings[-2:]
-                    st.warning(f"**DROP ZONE:** {at_risk[0]['Team']} and {at_risk[1]['Team']} are at risk of elimination!")
-                elif st.session_state.battle_phase == "Phase 2: The Squeeze" and len(standings) == 4:
-                    at_risk = standings[-1]
-                    st.warning(f"**DROP ZONE:** {at_risk['Team']} is at risk of elimination!")
-            
-            # Phase 3 Special Display
-            if st.session_state.battle_phase == "Phase 3: The Standoff":
-                standings = get_cumulative_standings()
-                standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
-                
-                if len(standings) == 3:
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.success(f"**👑 1st: {standings[0]['Team']}**\n{standings[0]['Pts']} pts\n(AUTO BYE TO FINAL)")
-                    with col2:
-                        st.warning(f"**⚔️ 2nd: {standings[1]['Team']}**\n{standings[1]['Pts']} pts\n(Playing Sudden Death)")
-                    with col3:
-                        st.error(f"**💀 3rd: {standings[2]['Team']}**\n{standings[2]['Pts']} pts\n(Playing Sudden Death)")
-        
-        else:
-            st.info("Battle Royale info only available in Survival Mode")
-
-# --- FOOTER ---
-st.markdown("""<div class="footer">OFFICIAL DLS TOURNAMENT ENGINE <br> WRITTEN AND DESIGNED BY <span class="designer-name">OLUWATIMILEYIN IGBINLOLA</span></div>""", unsafe_allow_html=True)
+            // Show admin panel if URL has admin parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('admin')) {
+                document.getElementById('adminPanel').style.display = 'block';
+            }
+        };
+    </script>
+</body>
+</html>
