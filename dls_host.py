@@ -54,7 +54,6 @@ st.markdown("""
     .phase-4 { background: #ca8a04; color: white; }
     .phase-final { background: #fbbf24; color: #000; }
     .sudden-death { background: linear-gradient(90deg, #000 0%, #dc2626 50%, #000 100%); color: white; border: 2px solid #dc2626; }
-    .golden-boot { color: #fbbf24; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,10 +71,9 @@ def init_defaults():
         'eliminated_teams': [], 'round_number': 1, 'survival_history': [],
         'battle_phase': 'Phase 1: The Purge',  # Track current phase
         'bye_team': None,  # For Phase 3: Team with bye
-        'cumulative_stats': {},  # Store cumulative team points
-        'cumulative_player_stats': {},  # NEW: Store cumulative player stats
+        'cumulative_stats': {},  # Store cumulative points
         'sudden_death_round': 0,  # Track sudden death rounds
-        'phase1_match_count': 2  # 2 matches each in Phase 1
+        'phase1_match_count': 2  # NEW: Track matches per team in Phase 1 (2 instead of 3)
     }
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
@@ -117,9 +115,8 @@ def load_data():
                 st.session_state.battle_phase = data.get("battle_phase", "Phase 1: The Purge")
                 st.session_state.bye_team = data.get("bye_team", None)
                 st.session_state.cumulative_stats = data.get("cumulative_stats", {})
-                st.session_state.cumulative_player_stats = data.get("cumulative_player_stats", {})  # Load player stats
                 st.session_state.sudden_death_round = data.get("sudden_death_round", 0)
-                st.session_state.phase1_match_count = data.get("phase1_match_count", 2)
+                st.session_state.phase1_match_count = data.get("phase1_match_count", 2)  # Load match count
 
                 for t in st.session_state.teams:
                     if t not in st.session_state.team_badges:
@@ -127,8 +124,12 @@ def load_data():
         except: init_defaults()
     else: init_defaults()
 
-def save_data_internal():
-    """Save all data including cumulative player stats"""
+def save_data_internal(current_stats):
+    safe_stats = {}
+    if current_stats:
+        for k, v in current_stats.items():
+            safe_stats[str(k)] = v
+
     data = {
         "teams": st.session_state.teams, "format": st.session_state.format,
         "current_round": st.session_state.current_round, "fixtures": st.session_state.fixtures,
@@ -137,6 +138,7 @@ def save_data_internal():
         "champion": st.session_state.champion, "active_teams": st.session_state.active_teams,
         "team_badges": st.session_state.team_badges, "news": st.session_state.news,
         "legacy_stats": st.session_state.legacy_stats, 
+        "player_stats": safe_stats,
         "team_history": st.session_state.team_history,
         "eliminated_teams": st.session_state.eliminated_teams,
         "round_number": st.session_state.round_number,
@@ -144,16 +146,15 @@ def save_data_internal():
         "battle_phase": st.session_state.battle_phase,
         "bye_team": st.session_state.bye_team,
         "cumulative_stats": st.session_state.cumulative_stats,
-        "cumulative_player_stats": st.session_state.cumulative_player_stats,  # Save player stats
         "sudden_death_round": st.session_state.sudden_death_round,
-        "phase1_match_count": st.session_state.phase1_match_count
+        "phase1_match_count": st.session_state.phase1_match_count  # Save match count
     }
     with open(DB_FILE, "w") as f: json.dump(data, f)
 
 # --- 🧠 BATTLE ROYALE CORE LOGIC ---
 
 def generate_balanced_fixtures_fixed(teams, matches_per_team):
-    """Generate fixtures where EVERY team plays exactly N matches"""
+    """FIXED: Generate fixtures where EVERY team plays exactly N matches"""
     if len(teams) < 2: return []
     
     # Create a round-robin schedule
@@ -240,16 +241,24 @@ def generate_balanced_fixtures_fixed(teams, matches_per_team):
     return fixtures
 
 def generate_fixtures_for_phase(teams, phase):
-    """Generate fixtures based on current phase - 2 MATCHES EACH IN PHASE 1"""
+    """Generate fixtures based on current phase - FIXED FOR 2 MATCHES EACH IN PHASE 1"""
     shuffled = teams.copy()
     random.shuffle(shuffled)
     
     if phase == "Phase 1: The Purge":
-        # 2 matches per team for balance
-        matches_per_team = 2
+        # FIXED: 2 matches per team instead of 3
+        matches_per_team = 2  # Changed from 3 to 2
         
         # Generate balanced fixtures
         fixtures = generate_balanced_fixtures_fixed(shuffled, matches_per_team)
+        
+        # Log match count
+        match_counts = {}
+        for team in teams:
+            match_counts[team] = 0
+        for fix in fixtures:
+            match_counts[fix[0]] += 1
+            match_counts[fix[1]] += 1
         
         return fixtures
     
@@ -363,126 +372,8 @@ def get_cumulative_standings():
     
     return standings
 
-def update_cumulative_player_stats():
-    """Update cumulative player stats from current round results"""
-    # Start with existing cumulative player stats
-    player_stats = st.session_state.cumulative_player_stats.copy()
-    
-    # Process all matches in current round
-    for mid, res in st.session_state.results.items():
-        try:
-            if "_" in mid:
-                base = mid.split('_')[0]
-            else:
-                base = mid
-            
-            if "v" in base:
-                h, a = base.split('v')
-            else:
-                continue
-        except: continue
-        
-        meta = st.session_state.match_meta.get(mid, {})
-        
-        def process_player_string(raw_str, team, stat_type):
-            if not raw_str: return
-            parts = raw_str.split(',')
-            for p in parts:
-                p = p.strip()
-                if not p: continue
-                count = 1
-                name = p
-                m_br = re.search(r'^(.*?)\s*\((\d+)\)$', p)
-                m_x = re.search(r'^(.*?)\s*[xX](\d+)$', p)
-                if m_br: name = m_br.group(1); count = int(m_br.group(2))
-                elif m_x: name = m_x.group(1); count = int(m_x.group(2))
-                name = name.strip().title()
-                
-                # Create unique player ID (name + team)
-                player_id = f"{name}|{team}"
-                
-                # Initialize player stats if not exists
-                if player_id not in player_stats:
-                    player_stats[player_id] = {
-                        'Name': name,
-                        'Team': team,
-                        'G': 0, 'A': 0, 'R': 0
-                    }
-                
-                # Add stats
-                player_stats[player_id][stat_type] += count
-        
-        # Process goals, assists, red cards
-        process_player_string(meta.get('h_s', ''), h, 'G')
-        process_player_string(meta.get('a_s', ''), a, 'G')
-        process_player_string(meta.get('h_a', ''), h, 'A')
-        process_player_string(meta.get('a_a', ''), a, 'A')
-        process_player_string(meta.get('h_r', ''), h, 'R')
-        process_player_string(meta.get('a_r', ''), a, 'R')
-    
-    # Save back to session state
-    st.session_state.cumulative_player_stats = player_stats
-
-def get_current_player_stats():
-    """Get cumulative player stats combined with current round"""
-    # Start with cumulative player stats
-    player_stats = st.session_state.cumulative_player_stats.copy()
-    
-    # Add current round results to show live updates
-    for mid, res in st.session_state.results.items():
-        try:
-            if "_" in mid:
-                base = mid.split('_')[0]
-            else:
-                base = mid
-            
-            if "v" in base:
-                h, a = base.split('v')
-            else:
-                continue
-        except: continue
-        
-        meta = st.session_state.match_meta.get(mid, {})
-        
-        def process_player_string_live(raw_str, team, stat_type):
-            if not raw_str: return
-            parts = raw_str.split(',')
-            for p in parts:
-                p = p.strip()
-                if not p: continue
-                count = 1
-                name = p
-                m_br = re.search(r'^(.*?)\s*\((\d+)\)$', p)
-                m_x = re.search(r'^(.*?)\s*[xX](\d+)\)$', p)
-                if m_br: name = m_br.group(1); count = int(m_br.group(2))
-                elif m_x: name = m_x.group(1); count = int(m_x.group(2))
-                name = name.strip().title()
-                
-                player_id = f"{name}|{team}"
-                
-                if player_id not in player_stats:
-                    player_stats[player_id] = {
-                        'Name': name,
-                        'Team': team,
-                        'G': 0, 'A': 0, 'R': 0
-                    }
-                
-                player_stats[player_id][stat_type] += count
-        
-        process_player_string_live(meta.get('h_s', ''), h, 'G')
-        process_player_string_live(meta.get('a_s', ''), a, 'G')
-        process_player_string_live(meta.get('h_a', ''), h, 'A')
-        process_player_string_live(meta.get('a_a', ''), a, 'A')
-        process_player_string_live(meta.get('h_r', ''), h, 'R')
-        process_player_string_live(meta.get('a_r', ''), a, 'R')
-    
-    return player_stats
-
 def handle_battle_royale_elimination():
     """Execute your exact Battle Royale protocol"""
-    # FIRST: Update cumulative player stats before elimination
-    update_cumulative_player_stats()
-    
     standings = get_cumulative_standings()
     
     # Sort by Points → GD → GF
@@ -508,7 +399,7 @@ def handle_battle_royale_elimination():
         st.session_state.champion = standings[0]['Team']
         st.session_state.news.insert(0, f"🏆 {st.session_state.champion} is the BATTLE ROYALE CHAMPION!")
         st.session_state.battle_phase = "CHAMPION CROWNED"
-        save_data_internal()
+        save_data_internal(current_player_stats)
         st.rerun()
         return
     
@@ -609,7 +500,7 @@ def handle_battle_royale_elimination():
             st.session_state.sudden_death_round = 0
             st.session_state.bye_team = None
     
-    # Save cumulative team stats before generating new fixtures
+    # Save cumulative stats before generating new fixtures
     for team_data in standings:
         team = team_data['Team']
         if team in st.session_state.active_teams:
@@ -629,6 +520,37 @@ def handle_battle_royale_elimination():
     next_fixtures = generate_fixtures_for_phase(st.session_state.active_teams, phase)
     st.session_state.fixtures = next_fixtures
     
+    # Verify match counts (for debugging)
+    if phase == "Phase 1: The Purge":
+        match_counts = {}
+        for team in st.session_state.active_teams:
+            match_counts[team] = 0
+        for fix in next_fixtures:
+            match_counts[fix[0]] += 1
+            match_counts[fix[1]] += 1
+        
+        # Check if all teams have 2 matches
+        all_have_2 = all(count == 2 for count in match_counts.values())
+        if not all_have_2:
+            st.error(f"❌ Match distribution issue: {match_counts}")
+            # Fallback: create simple round-robin
+            teams_list = st.session_state.active_teams.copy()
+            if len(teams_list) % 2:
+                teams_list.append("BYE")
+            
+            n = len(teams_list)
+            fallback_fixtures = []
+            for i in range(n // 2):
+                if teams_list[i] != "BYE" and teams_list[n - 1 - i] != "BYE":
+                    fallback_fixtures.append((teams_list[i], teams_list[n - 1 - i]))
+            
+            # Add reverse fixtures if needed
+            if len(fallback_fixtures) < len(st.session_state.active_teams):
+                reverse_fixtures = [(b, a) for (a, b) in fallback_fixtures]
+                fallback_fixtures.extend(reverse_fixtures)
+            
+            st.session_state.fixtures = fallback_fixtures[:len(st.session_state.active_teams)]
+    
     # Update round info
     st.session_state.round_number += 1
     
@@ -641,7 +563,7 @@ def handle_battle_royale_elimination():
     else:
         st.session_state.current_round = f"Round {st.session_state.round_number} • {phase}"
     
-    # Reset match data for next round (but player stats are saved in cumulative_player_stats)
+    # Reset match data
     st.session_state.results = {}
     st.session_state.match_meta = {}
     
@@ -653,14 +575,121 @@ def handle_battle_royale_elimination():
         'eliminated': eliminated_this_round
     })
     
-    save_data_internal()
+    save_data_internal(current_player_stats)
     st.rerun()
+
+def recalculate_stats():
+    """Calculate stats for display (includes cumulative stats)"""
+    t_stats = {}
+    
+    # Start with cumulative stats
+    for team, stats in st.session_state.cumulative_stats.items():
+        t_stats[team] = stats.copy()
+        t_stats[team]['Form'] = []  # Initialize form
+    
+    # Add current round results
+    for mid, res in st.session_state.results.items():
+        try:
+            if "_" in mid:
+                base = mid.split('_')[0]
+            else:
+                base = mid
+            
+            if "v" in base:
+                h, a = base.split('v')
+            else:
+                continue
+        except: continue
+        
+        # Initialize if not exists
+        if h not in t_stats:
+            t_stats[h] = {'P':0, 'W':0, 'D':0, 'L':0, 'GF':0, 'GA':0, 'GD':0, 'Pts':0, 'Form': []}
+        if a not in t_stats:
+            t_stats[a] = {'P':0, 'W':0, 'D':0, 'L':0, 'GF':0, 'GA':0, 'GD':0, 'Pts':0, 'Form': []}
+        
+        s_h, s_a = res[0], res[1]
+        
+        t_stats[h]['P'] += 1; t_stats[a]['P'] += 1
+        t_stats[h]['GF'] += s_h; t_stats[h]['GA'] += s_a; t_stats[h]['GD'] += (s_h - s_a)
+        t_stats[a]['GF'] += s_a; t_stats[a]['GA'] += s_h; t_stats[a]['GD'] += (s_a - s_h)
+
+        if s_h > s_a:
+            t_stats[h]['W'] += 1; t_stats[h]['Pts'] += 3; t_stats[a]['L'] += 1
+            t_stats[h]['Form'].append('W'); t_stats[a]['Form'].append('L')
+        elif s_a > s_h:
+            t_stats[a]['W'] += 1; t_stats[a]['Pts'] += 3; t_stats[h]['L'] += 1
+            t_stats[a]['Form'].append('W'); t_stats[h]['Form'].append('L')
+        else:
+            t_stats[h]['D'] += 1; t_stats[h]['Pts'] += 1; t_stats[a]['D'] += 1; t_stats[a]['Pts'] += 1
+            t_stats[h]['Form'].append('D'); t_stats[a]['Form'].append('D')
+    
+    # Player stats (unchanged)
+    p_stats = {} 
+    if 'legacy_stats' in st.session_state:
+        for key, s in st.session_state.legacy_stats.items():
+            name = key
+            team = "Unknown"
+            if "('" in key:
+                try:
+                    clean = key.replace("('", "").replace("')", "").replace("', '", "|")
+                    name, team = clean.split("|")
+                except: pass
+            elif isinstance(s, dict) and 'Team' in s:
+                team = s['Team']
+            
+            uid = (name, team)
+            if uid not in p_stats: p_stats[uid] = {'G':0, 'A':0, 'R':0}
+            if isinstance(s, dict):
+                p_stats[uid]['G'] += s.get('G', 0)
+                p_stats[uid]['A'] += s.get('A', 0)
+                p_stats[uid]['R'] += s.get('R', 0)
+
+    for mid, res in st.session_state.results.items():
+        try:
+            if "_" in mid:
+                base = mid.split('_')[0]
+            else:
+                base = mid
+            
+            if "v" in base:
+                h, a = base.split('v')
+            else:
+                continue
+        except: continue
+        
+        meta = st.session_state.match_meta.get(mid, {})
+        def process_player_string(raw_str, team, stat_type):
+            if not raw_str: return
+            parts = raw_str.split(',')
+            for p in parts:
+                p = p.strip()
+                if not p: continue
+                count = 1
+                name = p
+                m_br = re.search(r'^(.*?)\s*\((\d+)\)$', p)
+                m_x = re.search(r'^(.*?)\s*[xX](\d+)$', p)
+                if m_br: name = m_br.group(1); count = int(m_br.group(2))
+                elif m_x: name = m_x.group(1); count = int(m_x.group(2))
+                name = name.strip().title()
+                uid = (name, team)
+                if uid not in p_stats: p_stats[uid] = {'G':0, 'A':0, 'R':0}
+                p_stats[uid][stat_type] += count
+
+        process_player_string(meta.get('h_s', ''), h, 'G')
+        process_player_string(meta.get('a_s', ''), a, 'G')
+        process_player_string(meta.get('h_a', ''), h, 'A')
+        process_player_string(meta.get('a_a', ''), a, 'A')
+        process_player_string(meta.get('h_r', ''), h, 'R')
+        process_player_string(meta.get('a_r', ''), a, 'R')
+
+    return t_stats, p_stats
 
 if 'init' not in st.session_state:
     load_data()
     st.session_state.init = True
 
 init_defaults()
+current_team_stats, current_player_stats = recalculate_stats()
 
 # --- 🏆 HEADER ---
 st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
@@ -716,9 +745,28 @@ with st.sidebar:
                     handle_battle_royale_elimination()
                 else:
                     # Original logic for other formats
-                    # ... (unchanged from previous code)
-                    save_data_internal()
-                    st.rerun()
+                    st.session_state.team_history = copy.deepcopy(current_team_stats)
+                    
+                    wins = []
+                    for i, f in enumerate(st.session_state.fixtures):
+                        if len(f) < 2: continue
+                        h, a = f[0], f[1]
+                        mid = f"{h}v{a}_{i}"
+                        r = st.session_state.results.get(mid)
+                        if not r: wins.append(random.choice([h, a]))
+                        else:
+                            if r[0] > r[1]: wins.append(h)
+                            elif r[1] > r[0]: wins.append(a)
+                            elif len(r)>2 and r[2]>r[3]: wins.append(h)
+                            else: wins.append(a)
+                    if len(wins) == 1: st.session_state.champion = wins[0]
+                    else:
+                        nxt = []
+                        for i in range(0, len(wins), 2):
+                            if i+1 < len(wins): nxt.append((wins[i], wins[i+1]))
+                        st.session_state.fixtures = nxt; st.session_state.results = {}; st.session_state.match_meta = {}
+                        st.session_state.current_round = "NEXT ROUND"
+                    save_data_internal(current_player_stats); st.rerun()
 
         st.markdown("---")
         st.markdown("### ⚙️ TEAM EDITOR")
@@ -742,8 +790,7 @@ with st.sidebar:
                     else:
                         st.toast(f"✅ {new_team} joined!")
                 
-                save_data_internal()
-                st.rerun()
+                save_data_internal(current_player_stats); st.rerun()
 
         edit_target = st.selectbox("SELECT CLUB", ["Select..."] + st.session_state.teams)
         if edit_target != "Select...":
@@ -751,19 +798,21 @@ with st.sidebar:
             if c1.button("🗑️ DELETE"):
                 st.session_state.teams.remove(edit_target)
                 if edit_target in st.session_state.active_teams: st.session_state.active_teams.remove(edit_target)
-                save_data_internal()
-                st.rerun()
+                save_data_internal(current_player_stats); st.rerun()
             rename_val = c2.text_input("RENAME TO", value=edit_target)
             if c2.button("RENAME"):
                 idx = st.session_state.teams.index(edit_target)
                 st.session_state.teams[idx] = rename_val
                 st.session_state.team_badges[rename_val] = st.session_state.team_badges.pop(edit_target)
-                save_data_internal()
-                st.rerun()
+                save_data_internal(current_player_stats); st.rerun()
 
         st.markdown("---")
         st.markdown("### 💾 DATA MANAGEMENT")
         
+        safe_export_stats = {}
+        for k, v in current_player_stats.items():
+            safe_export_stats[str(k)] = v
+            
         current_data = json.dumps({
             "teams": st.session_state.teams, "format": st.session_state.format, 
             "current_round": st.session_state.current_round, "fixtures": st.session_state.fixtures, 
@@ -771,7 +820,7 @@ with st.sidebar:
             "started": st.session_state.started, "groups": st.session_state.groups, 
             "champion": st.session_state.champion, "active_teams": st.session_state.active_teams, 
             "team_badges": st.session_state.team_badges, "news": st.session_state.news,
-            "legacy_stats": st.session_state.legacy_stats,
+            "legacy_stats": st.session_state.legacy_stats, "player_stats": safe_export_stats,
             "team_history": st.session_state.team_history,
             "eliminated_teams": st.session_state.eliminated_teams,
             "round_number": st.session_state.round_number,
@@ -779,7 +828,6 @@ with st.sidebar:
             "battle_phase": st.session_state.battle_phase,
             "bye_team": st.session_state.bye_team,
             "cumulative_stats": st.session_state.cumulative_stats,
-            "cumulative_player_stats": st.session_state.cumulative_player_stats,
             "sudden_death_round": st.session_state.sudden_death_round,
             "phase1_match_count": st.session_state.phase1_match_count
         })
@@ -798,7 +846,7 @@ with st.sidebar:
             st.session_state.active_teams = data.get("active_teams", [])
             st.session_state.team_badges = data.get("team_badges", {})
             st.session_state.news = data.get("news", [])
-            st.session_state.legacy_stats = data.get("legacy_stats", {})
+            st.session_state.legacy_stats = data.get("legacy_stats", data.get("player_stats", {}))
             st.session_state.team_history = data.get("team_history", {})
             st.session_state.eliminated_teams = data.get("eliminated_teams", [])
             st.session_state.round_number = data.get("round_number", 1)
@@ -806,11 +854,9 @@ with st.sidebar:
             st.session_state.battle_phase = data.get("battle_phase", "Phase 1: The Purge")
             st.session_state.bye_team = data.get("bye_team", None)
             st.session_state.cumulative_stats = data.get("cumulative_stats", {})
-            st.session_state.cumulative_player_stats = data.get("cumulative_player_stats", {})
             st.session_state.sudden_death_round = data.get("sudden_death_round", 0)
             st.session_state.phase1_match_count = data.get("phase1_match_count", 2)
-            save_data_internal()
-            st.rerun()
+            save_data_internal(current_player_stats); st.rerun()
         if st.button("🧨 FACTORY RESET"):
             st.session_state.clear()
             if os.path.exists(DB_FILE): os.remove(DB_FILE)
@@ -843,9 +889,8 @@ if not st.session_state.started:
                     st.session_state.battle_phase = "Phase 1: The Purge"
                     st.session_state.bye_team = None
                     st.session_state.cumulative_stats = {}
-                    st.session_state.cumulative_player_stats = {}  # Initialize player stats
                     st.session_state.sudden_death_round = 0
-                    st.session_state.phase1_match_count = 2
+                    st.session_state.phase1_match_count = 2  # 2 matches each in Phase 1
                     
                     # Initialize cumulative stats for all teams
                     for team in st.session_state.teams:
@@ -854,12 +899,20 @@ if not st.session_state.started:
                             'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
                         }
                     
-                    # Generate first round fixtures
+                    # Generate first round fixtures (2 matches each for Phase 1)
                     matches = generate_fixtures_for_phase(st.session_state.teams, "Phase 1: The Purge")
                     st.session_state.fixtures = matches
                     st.session_state.current_round = f"Round 1 • {st.session_state.battle_phase}"
                     
-                    st.success(f"💀 BATTLE ROYALE INITIALIZED! 2 matches per team. Points and player stats carry over forever!")
+                    # Check and verify match counts
+                    match_counts = {}
+                    for team in st.session_state.teams:
+                        match_counts[team] = 0
+                    for fix in matches:
+                        match_counts[fix[0]] += 1
+                        match_counts[fix[1]] += 1
+                    
+                    st.success(f"💀 BATTLE ROYALE INITIALIZED! 2 matches per team. Points carry over forever. Bottom 2 eliminated each round!")
                 
                 elif "League" in fmt: 
                     matches = list(itertools.permutations(st.session_state.teams, 2))
@@ -878,8 +931,7 @@ if not st.session_state.started:
                     st.session_state.fixtures = matches
                 
                 st.session_state.started = True
-                save_data_internal()
-                st.rerun()
+                save_data_internal(current_player_stats); st.rerun()
 
 else:
     tab1, tab2, tab3, tab4 = st.tabs(["📊 CUMULATIVE TABLE", "⚽ MATCH CENTER", "⭐ STATS", "💀 BATTLE INFO"])
@@ -909,12 +961,21 @@ else:
                 elif st.session_state.bye_team == team:
                     row_class = "bye-zone"
                 
+                # Create form visualization
+                form_viz = ""
+                if team in current_team_stats and 'Form' in current_team_stats[team]:
+                    for x in current_team_stats[team]['Form'][-5:]:
+                        if x == 'W': form_viz += "✅"
+                        elif x == 'L': form_viz += "🟥"
+                        else: form_viz += "⬜"
+                
                 rows.append({
                     "#": idx + 1,
                     "Club": f"{badge} {team}",
                     "P": s['P'], "W": s['W'], "D": s['D'], "L": s['L'], 
                     "GF": s['GF'], "GA": s['GA'], "GD": s['GD'], 
-                    "Pts": s['Pts']
+                    "Pts": s['Pts'], "Form": form_viz,
+                    "_row_class": row_class
                 })
             
             if rows:
@@ -931,7 +992,7 @@ else:
                     st.info(f"👑 **BYE:** {st.session_state.bye_team} gets automatic pass to Final!")
                     st.warning(f"⚔️ **SUDDEN DEATH:** 2nd vs 3rd playing elimination match!")
                 
-                st.dataframe(df[['#', 'Club', 'P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts']], 
+                st.dataframe(df[['#', 'Club', 'P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts', 'Form']], 
                            hide_index=True, use_container_width=True,
                            column_config={
                                "#": st.column_config.NumberColumn(width="small"),
@@ -1072,60 +1133,24 @@ else:
                                     st.session_state.cumulative_stats[a]['D'] += 1
                                     st.session_state.cumulative_stats[a]['Pts'] += 1
                             
-                            save_data_internal()
-                            st.success("UPDATED")
-                            st.rerun()
+                            save_data_internal(current_player_stats); st.success("UPDATED"); st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
-        # Get cumulative player stats
-        player_stats = get_current_player_stats()
-        
-        if player_stats:
-            # Convert to list for display
+        if current_player_stats:
             data = []
-            for player_id, stats in player_stats.items():
-                if isinstance(stats, dict):
-                    data.append({
-                        "Player": stats.get('Name', 'Unknown'),
-                        "Club": stats.get('Team', 'Unknown'),
-                        "Goals": stats.get('G', 0),
-                        "Assists": stats.get('A', 0),
-                        "Reds": stats.get('R', 0)
-                    })
-            
-            if data:
-                df = pd.DataFrame(data)
-                
-                # Show Golden Boot leader
+            for (name, team), s in current_player_stats.items():
+                data.append({"Player": name, "Club": team, "Goals": s['G'], "Assists": s['A'], "Reds": s['R']})
+            df = pd.DataFrame(data)
+            c1, c2, c3 = st.columns(3)
+            def show_stat(col, title, key):
+                col.markdown(f"#### {title}")
                 if not df.empty:
-                    top_scorer = df.sort_values(by='Goals', ascending=False).iloc[0]
-                    st.markdown(f"<div class='glass-panel' style='text-align:center'><h3>👑 GOLDEN BOOT LEADER</h3><h2 class='golden-boot'>{top_scorer['Player']} ({top_scorer['Club']}) - {top_scorer['Goals']} goals</h2></div>", unsafe_allow_html=True)
-                
-                c1, c2, c3 = st.columns(3)
-                
-                def show_stat(col, title, key, icon):
-                    col.markdown(f"#### {icon} {title}")
-                    if not df.empty:
-                        top = df.sort_values(by=key, ascending=False).head(10).reset_index(drop=True)
-                        top.index += 1
-                        col.dataframe(top[['Player', 'Club', key]], use_container_width=True)
-                
-                show_stat(c1, "Goals", "Goals", "⚽")
-                show_stat(c2, "Assists", "Assists", "👟")
-                show_stat(c3, "Red Cards", "Reds", "🟥")
-                
-                # Show total stats
-                with st.expander("📊 TOTAL TOURNAMENT STATS"):
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Total Players", len(df))
-                    col2.metric("Total Goals", int(df['Goals'].sum()))
-                    col3.metric("Total Assists", int(df['Assists'].sum()))
-                    col4.metric("Total Red Cards", int(df['Reds'].sum()))
-            else:
-                st.info("No player stats recorded yet. Report matches to see stats!")
-        else:
-            st.info("No player stats recorded yet. Report matches to see stats!")
+                    top = df.sort_values(by=key, ascending=False).head(10).reset_index(drop=True)
+                    top.index += 1
+                    col.dataframe(top[['Player', 'Club', key]], use_container_width=True)
+            show_stat(c1, "⚽ Goals", "Goals"); show_stat(c2, "👟 Assists", "Assists"); show_stat(c3, "🟥 Reds", "Reds")
+        else: st.info("No Goals Recorded Yet")
 
     with tab4:
         if "Survival" in st.session_state.format:
@@ -1136,7 +1161,6 @@ else:
                 st.markdown("""
                 **1. The "Cumulative" Table**
                 - Points carry over FOREVER
-                - Player stats (goals, assists, reds) also carry over FOREVER
                 - Win 3-0 in Round 1 → carry 3 points and +3 GD into Round 2
                 - Strategy: Hoard points to stay safe from the "Drop Zone"
                 
@@ -1151,7 +1175,7 @@ else:
                 st.markdown("""
                 **Phase 1: The Purge (5+ Teams Alive)**
                 - Bottom 2 teams eliminated EVERY ROUND
-                - **2 matches per team each round**
+                - **2 matches per team each round** (changed from 3 for balance)
                 - Example: 8 teams → Round 1 → 7th & 8th deleted
                 
                 **Phase 2: The Squeeze (4 Teams Alive)**
