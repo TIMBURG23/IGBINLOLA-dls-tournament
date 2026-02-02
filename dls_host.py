@@ -953,12 +953,41 @@ else:
                             elim_df = pd.DataFrame(elim_data)
                             st.dataframe(elim_df, hide_index=True, use_container_width=True)
 
+        def render_league_table():
+            standings = get_cumulative_standings()
+            
+            if not standings:
+                st.info("No teams in league")
+                return
+            
+            standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
+            
+            rows = []
+            for idx, s in enumerate(standings):
+                team = s['Team']
+                badge = st.session_state.team_badges.get(team, "🛡️")
+                
+                rows.append({
+                    "#": idx + 1,
+                    "Club": f"{badge} {team}",
+                    "P": s['P'], "W": s['W'], "D": s['D'], "L": s['L'], 
+                    "GF": s['GF'], "GA": s['GA'], "GD": s['GD'], 
+                    "Pts": s['Pts']
+                })
+            
+            if rows:
+                df = pd.DataFrame(rows)
+                st.dataframe(df[['#', 'Club', 'P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts']], 
+                           hide_index=True, use_container_width=True,
+                           column_config={
+                               "#": st.column_config.NumberColumn(width="small"),
+                               "Pts": st.column_config.ProgressColumn("Pts", format="%d", min_value=0, max_value=max(100, df['Pts'].max()))
+                           })
+
         if st.session_state.format == "Survival Mode (Battle Royale)":
             render_battle_royale_table()
         elif "League" in st.session_state.format:
-         render_league_table()
-
-            # Render regular table...
+            render_league_table()
         elif "World" in st.session_state.format and "Group" in st.session_state.current_round:
             # Render group tables...
             pass
