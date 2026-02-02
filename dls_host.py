@@ -956,7 +956,8 @@ else:
         if st.session_state.format == "Survival Mode (Battle Royale)":
             render_battle_royale_table()
         elif "League" in st.session_state.format:
-            st.markdown("### 🌍 LEAGUE TABLE")
+         render_league_table()
+
             # Render regular table...
         elif "World" in st.session_state.format and "Group" in st.session_state.current_round:
             # Render group tables...
