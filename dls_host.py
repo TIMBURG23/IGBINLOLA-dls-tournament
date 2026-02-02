@@ -11,7 +11,7 @@ from datetime import datetime
 # --- CONFIGURATION ---
 st.set_page_config(page_title="DLS Ultra Manager", page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS STYLING ---
+# --- CSS STYLING (YOUR ORIGINAL DESIGN) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&family=Rajdhani:wght@500;700&display=swap');
@@ -85,13 +85,10 @@ def load_data():
         try:
             with open(DB_FILE, "r") as f:
                 data = json.load(f)
-                # Load all keys safely
                 for k in st.session_state.keys():
                     if k in data:
-                        # Special handler for fixtures tuple conversion
-                        if k == 'fixtures':
-                            raw = data.get(k, [])
-                            st.session_state[k] = [tuple(f) for f in raw] if isinstance(raw, list) else []
+                        if k == 'fixtures': # Safe tuple load
+                            st.session_state[k] = [tuple(f) for f in data.get(k, [])]
                         else:
                             st.session_state[k] = data[k]
                 
@@ -106,46 +103,40 @@ def save_data_internal():
     data = {k: st.session_state[k] for k in st.session_state.keys() if k != 'init'}
     with open(DB_FILE, "w") as f: json.dump(data, f)
 
-# --- 🛠️ HELPER: PARSE MATCH KEY (THE FIX) ---
-def parse_match_key(mid):
-    """
-    Intelligently splits a match ID string into Home and Away teams.
-    Handles 'v', '|vs|', and team names containing 'v' (like 'Vibez').
-    """
-    # 1. Remove the unique index suffix (e.g. "_0")
-    if "_" in mid:
-        base = mid.rsplit('_', 1)[0]
+# --- 🛠️ CRITICAL FIX: SAFE MATCH ID PARSER ---
+def safe_split_match_id(mid):
+    """Safely extracts Home and Away teams even if names have 'v' in them"""
+    # 1. Strip the suffix (e.g. _0)
+    if "_" in mid and mid.rsplit("_", 1)[-1].isdigit():
+        base = mid.rsplit("_", 1)[0]
     else:
         base = mid
-
-    # 2. Try the safe separator first
-    if "|vs|" in base:
-        return base.split('|vs|')
-    
-    # 3. Fallback to 'v' (Legacy support for old matches)
-    if "v" in base:
-        # Check against known team names to solve the "Vibez" problem
-        # Try to match the start of the string with a known team name + 'v'
-        for team in st.session_state.teams:
-            if base.startswith(team + "v"):
-                # Found the home team, the rest is the away team
-                return team, base[len(team)+1:]
         
-        # If loop fails (maybe team was deleted), fall back to simple split
-        # This might fail for "Vibez" but is the last resort
-        parts = base.split('v')
-        if len(parts) == 2:
-            return parts[0], parts[1]
+    # 2. Check for the new SAFE separator first
+    if "|vs|" in base:
+        return base.split("|vs|")
+        
+    # 3. Fallback for old IDs: Use team list to identify the split point
+    # This prevents "DC Vibez FC" from breaking the logic
+    for team in st.session_state.teams:
+        if base.startswith(team + "v"):
+            # We found the home team at the start
+            possible_away = base[len(team)+1:]
+            # Verify if possible_away is also a valid team (optional but safer)
+            return team, possible_away
             
+    # 4. Last resort simple split (might fail for Vibez but handles legacy)
+    parts = base.split('v')
+    if len(parts) == 2: return parts[0], parts[1]
     return None, None
 
-# --- 🧠 LOGIC ENGINE ---
+# --- 🧠 LOGIC ENGINE (RESTORED & FIXED) ---
 
 def generate_balanced_fixtures_fixed(teams, matches_per_team):
     """Generate fixtures where EVERY team plays exactly N matches"""
     if len(teams) < 2: return []
     
-    # Ticket Bag System
+    # Create tickets
     bag = []
     for t in teams:
         for _ in range(matches_per_team):
@@ -154,7 +145,6 @@ def generate_balanced_fixtures_fixed(teams, matches_per_team):
     random.shuffle(bag)
     fixtures = []
     
-    # Attempt to pair
     for attempt in range(50):
         temp_bag = bag.copy()
         temp_fixtures = []
@@ -163,10 +153,10 @@ def generate_balanced_fixtures_fixed(teams, matches_per_team):
         
         while len(temp_bag) >= 2:
             t1 = temp_bag.pop()
-            # Find candidate that is not t1
             candidates = [x for x in temp_bag if x != t1]
             if not candidates:
                 valid = False; break
+            
             t2 = candidates[0]
             temp_bag.remove(t2)
             temp_fixtures.append((t1, t2))
@@ -206,17 +196,18 @@ def generate_fixtures_for_phase(teams, phase):
     return []
 
 def get_cumulative_standings():
+    """Calculates table. Uses safe_split to fix the 'Vibez' bug."""
     standings = []
     cumulative = copy.deepcopy(st.session_state.cumulative_stats)
     
-    # Initialize active teams if missing
+    # Ensure all active teams are in cumulative dict
     for t in st.session_state.active_teams:
         if t not in cumulative:
             cumulative[t] = {'P': 0, 'W': 0, 'D': 0, 'L': 0, 'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0}
 
     # Add current round results
     for mid, res in st.session_state.results.items():
-        h, a = parse_match_key(mid) # USE THE FIX
+        h, a = safe_split_match_id(mid) # <--- THE FIX
         if not h or not a: continue
         
         if h not in cumulative: cumulative[h] = {'P': 0, 'W': 0, 'D': 0, 'L': 0, 'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0}
@@ -234,7 +225,7 @@ def get_cumulative_standings():
         elif s_a > s_h:
             cumulative[a]['W'] += 1; cumulative[a]['Pts'] += 3; cumulative[h]['L'] += 1
         else:
-            # STRICT RULE: DRAW = 1 POINT. Penalties do NOT affect table points.
+            # STRICT DRAW RULE: 1 POINT
             cumulative[h]['D'] += 1; cumulative[h]['Pts'] += 1
             cumulative[a]['D'] += 1; cumulative[a]['Pts'] += 1
     
@@ -248,7 +239,7 @@ def update_cumulative_player_stats():
     player_stats = st.session_state.cumulative_player_stats.copy()
     
     for mid, res in st.session_state.results.items():
-        h, a = parse_match_key(mid) # USE THE FIX
+        h, a = safe_split_match_id(mid) # <--- THE FIX
         if not h or not a: continue
         
         meta = st.session_state.match_meta.get(mid, {})
@@ -261,7 +252,6 @@ def update_cumulative_player_stats():
                 
                 count = 1
                 name = part
-                # Parse "Messi (2)" or "Messi x2"
                 m1 = re.search(r'^(.*?)\s*\((\d+)\)$', part)
                 m2 = re.search(r'^(.*?)\s*[xX](\d+)$', part)
                 if m1: name = m1.group(1); count = int(m1.group(2))
@@ -320,9 +310,6 @@ def handle_battle_royale_elimination():
 
     elif phase == "Phase 3: The Standoff":
         if st.session_state.sudden_death_round >= 2:
-            # Calculate aggregate of the 2 legs
-            # This logic assumes the 2 legs just finished
-            # Find the match IDs for the 2 legs
             leader = standings[0]['Team']
             p2 = standings[1]['Team']
             p3 = standings[2]['Team']
@@ -343,9 +330,6 @@ def handle_battle_royale_elimination():
     for t_data in standings:
         t = t_data['Team']
         if t in st.session_state.active_teams:
-            # We must NOT overwrite with cumulative stats directly, 
-            # because 'standings' already includes 'cumulative_stats' + 'current results'
-            # So we set cumulative_stats TO the current standings
             st.session_state.cumulative_stats[t] = {k:v for k,v in t_data.items() if k != 'Team'}
 
     # Next Round Setup
@@ -373,10 +357,21 @@ init_defaults()
 # --- 🏆 UI RENDERING ---
 st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
 
+if "Survival" in st.session_state.format:
+    st.markdown(f"""
+    <div style="text-align: center; margin: 20px 0; padding: 15px; background: linear-gradient(90deg, #000 0%, #dc2626 50%, #000 100%); border-radius: 10px;">
+        <h2 style="color: white; font-family: 'Teko'; margin: 0;">💀 BATTLE ROYALE PROTOCOL</h2>
+        <p style="color: #fca5a5; font-family: 'Rajdhani'; margin: 5px 0 0 0;">"Survive the Cut. Trust No One."</p>
+    </div>
+    """, unsafe_allow_html=True)
+
 if st.session_state.champion:
     st.markdown(f'<div class="subtitle" style="color:#FFD700">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
 else:
-    st.markdown(f'<div class="subtitle">{st.session_state.current_round}</div>', unsafe_allow_html=True)
+    subtitle = f"{st.session_state.current_round}"
+    if "Survival" in st.session_state.format:
+        subtitle = f"Round {st.session_state.round_number} • {st.session_state.battle_phase}"
+    st.markdown(f'<div class="subtitle">{subtitle}</div>', unsafe_allow_html=True)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -396,23 +391,20 @@ with st.sidebar:
                     handle_battle_royale_elimination()
                 else:
                     # Generic next round for League
-                    # Update cumulative stats first
                     standings = get_cumulative_standings()
                     for t_data in standings:
                         t = t_data['Team']
                         st.session_state.cumulative_stats[t] = {k:v for k,v in t_data.items() if k != 'Team'}
                     
-                    # Generate new fixtures
                     st.session_state.round_number += 1
                     matches = list(itertools.permutations(st.session_state.teams, 2))
                     random.shuffle(matches)
-                    st.session_state.fixtures = matches[:len(st.session_state.teams)//2] # Sample logic
+                    st.session_state.fixtures = matches[:len(st.session_state.teams)//2]
                     st.session_state.results = {}
                     st.session_state.match_meta = {}
                     save_data_internal(); st.rerun()
 
         st.markdown("---")
-        # ADD TEAM
         new_team = st.text_input("NEW CLUB")
         if st.button("ADD"):
             if new_team and new_team not in st.session_state.teams:
@@ -420,12 +412,10 @@ with st.sidebar:
                 st.session_state.team_badges[new_team] = random.choice(BADGE_POOL)
                 if st.session_state.started:
                     st.session_state.active_teams.append(new_team)
-                    # Init 0 stats for new team
                     st.session_state.cumulative_stats[new_team] = {'P':0,'W':0,'D':0,'L':0,'GF':0,'GA':0,'GD':0,'Pts':0}
                     st.toast(f"{new_team} Joined!")
                 save_data_internal(); st.rerun()
                 
-        # DATA TOOLS
         if st.button("🧨 RESET ALL"):
             st.session_state.clear(); 
             if os.path.exists(DB_FILE): os.remove(DB_FILE)
@@ -462,7 +452,6 @@ else:
                          hide_index=True, use_container_width=True,
                          column_config={"Pts": st.column_config.ProgressColumn("Pts", format="%d", min_value=0, max_value=int(df['Pts'].max())+10)})
             
-            # Show elimination preview
             if "Survival" in st.session_state.format:
                 count = len(df)
                 if count >= 5: drop = 2
@@ -475,11 +464,9 @@ else:
             if len(fix) < 2: continue
             h, a = fix[0], fix[1]
             
-            # SAFE KEY GENERATION using |vs|
-            # We check if an old result exists with 'v', if not use new key
+            # FIX: Use safe separator for new matches
             legacy_key = f"{h}v{a}_{i}"
             new_key = f"{h}|vs|{a}_{i}"
-            
             mid = legacy_key if legacy_key in st.session_state.results else new_key
             res = st.session_state.results.get(mid)
             
@@ -499,7 +486,7 @@ else:
                         s1 = cc1.number_input("Home", 0, 20, key=f"h_{mid}")
                         s2 = cc2.number_input("Away", 0, 20, key=f"a_{mid}")
                         
-                        # Penalty Inputs if Draw
+                        # Penalties visually supported but don't give extra points
                         p1, p2 = 0, 0
                         if s1 == s2:
                             st.caption("Penalties")
@@ -520,7 +507,7 @@ else:
                 st.markdown("</div>", unsafe_allow_html=True)
 
     with t3:
-        update_cumulative_player_stats() # Refresh view
+        update_cumulative_player_stats() # Refresh
         p_stats = st.session_state.cumulative_player_stats
         if p_stats:
             data = list(p_stats.values())
@@ -530,6 +517,6 @@ else:
             st.info("No stats yet")
 
     with t4:
-        st.write("News Feed")
+        st.markdown("### 📰 NEWS FEED")
         for n in st.session_state.news:
             st.markdown(f"- {n}", unsafe_allow_html=True)
