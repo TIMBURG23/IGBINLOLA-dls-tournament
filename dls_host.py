@@ -70,12 +70,12 @@ def init_defaults():
         'admin_unlock': False, 'team_badges': {}, 'news': [], 
         'legacy_stats': {}, 'team_history': {},
         'eliminated_teams': [], 'round_number': 1, 'survival_history': [],
-        'battle_phase': 'Phase 1: The Purge',  # Track current phase
-        'bye_team': None,  # For Phase 3: Team with bye
-        'cumulative_stats': {},  # Store cumulative team points
-        'cumulative_player_stats': {},  # NEW: Store cumulative player stats
-        'sudden_death_round': 0,  # Track sudden death rounds
-        'phase1_match_count': 2  # 2 matches each in Phase 1
+        'battle_phase': 'Phase 1: The Purge',
+        'bye_team': None,
+        'cumulative_stats': {},
+        'cumulative_player_stats': {},
+        'sudden_death_round': 0,
+        'phase1_match_count': 2
     }
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
@@ -117,7 +117,7 @@ def load_data():
                 st.session_state.battle_phase = data.get("battle_phase", "Phase 1: The Purge")
                 st.session_state.bye_team = data.get("bye_team", None)
                 st.session_state.cumulative_stats = data.get("cumulative_stats", {})
-                st.session_state.cumulative_player_stats = data.get("cumulative_player_stats", {})  # Load player stats
+                st.session_state.cumulative_player_stats = data.get("cumulative_player_stats", {})
                 st.session_state.sudden_death_round = data.get("sudden_death_round", 0)
                 st.session_state.phase1_match_count = data.get("phase1_match_count", 2)
 
@@ -144,7 +144,7 @@ def save_data_internal():
         "battle_phase": st.session_state.battle_phase,
         "bye_team": st.session_state.bye_team,
         "cumulative_stats": st.session_state.cumulative_stats,
-        "cumulative_player_stats": st.session_state.cumulative_player_stats,  # Save player stats
+        "cumulative_player_stats": st.session_state.cumulative_player_stats,
         "sudden_death_round": st.session_state.sudden_death_round,
         "phase1_match_count": st.session_state.phase1_match_count
     }
@@ -160,7 +160,7 @@ def generate_balanced_fixtures_fixed(teams, matches_per_team):
     def round_robin(teams_list):
         """Generate round-robin pairs"""
         if len(teams_list) % 2:
-            teams_list.append(None)  # Add dummy for odd number
+            teams_list.append(None)
         
         n = len(teams_list)
         fixtures = []
@@ -171,38 +171,30 @@ def generate_balanced_fixtures_fixed(teams, matches_per_team):
                 if teams_list[i] is not None and teams_list[n - 1 - i] is not None:
                     round_fixtures.append((teams_list[i], teams_list[n - 1 - i]))
             
-            # Rotate for next round
             teams_list.insert(1, teams_list.pop())
             fixtures.extend(round_fixtures)
         
         return fixtures
     
-    # Get all possible unique pairings
     all_possible = list(itertools.combinations(teams, 2))
     random.shuffle(all_possible)
     
-    # If matches_per_team is small, use round-robin
     if matches_per_team <= len(teams) - 1:
-        # Create multiple mini-rounds
         fixtures = []
         for _ in range(matches_per_team):
             round_fixtures = round_robin(teams.copy())
-            # Filter out any None teams from the round-robin
             round_fixtures = [f for f in round_fixtures if f[0] is not None and f[1] is not None]
             fixtures.extend(round_fixtures)
         
-        # Take only the required number of fixtures
         total_matches_needed = (len(teams) * matches_per_team) // 2
         if len(fixtures) >= total_matches_needed:
             return fixtures[:total_matches_needed]
     
-    # Fallback: Use combination approach
     team_match_counts = {team: 0 for team in teams}
     fixtures = []
     available_pairs = all_possible.copy()
     
     while available_pairs and min(team_match_counts.values()) < matches_per_team:
-        # Find a pair where both teams need matches
         for pair in available_pairs[:]:
             t1, t2 = pair
             if team_match_counts[t1] < matches_per_team and team_match_counts[t2] < matches_per_team:
@@ -212,20 +204,15 @@ def generate_balanced_fixtures_fixed(teams, matches_per_team):
                 available_pairs.remove(pair)
                 break
         else:
-            # No suitable pair found, break
             break
     
-    # If we still need more matches, try to add random ones
     if min(team_match_counts.values()) < matches_per_team:
-        # Get teams that need more matches
         needy_teams = [t for t in teams if team_match_counts[t] < matches_per_team]
         
-        # Try to create additional matches for needy teams
         for i in range(len(needy_teams)):
             for j in range(i + 1, len(needy_teams)):
                 t1, t2 = needy_teams[i], needy_teams[j]
                 if team_match_counts[t1] < matches_per_team and team_match_counts[t2] < matches_per_team:
-                    # Check if this pair already exists
                     existing = False
                     for fix in fixtures:
                         if (fix[0] == t1 and fix[1] == t2) or (fix[0] == t2 and fix[1] == t1):
@@ -240,36 +227,28 @@ def generate_balanced_fixtures_fixed(teams, matches_per_team):
     return fixtures
 
 def generate_fixtures_for_phase(teams, phase):
-    """Generate fixtures based on current phase - 2 MATCHES EACH IN PHASE 1"""
+    """Generate fixtures based on current phase"""
     shuffled = teams.copy()
     random.shuffle(shuffled)
     
     if phase == "Phase 1: The Purge":
-        # 2 matches per team for balance
         matches_per_team = 2
-        
-        # Generate balanced fixtures
         fixtures = generate_balanced_fixtures_fixed(shuffled, matches_per_team)
-        
         return fixtures
     
     elif phase == "Phase 2: The Squeeze":
-        # For 4 teams: 2 matches each (home and away against each other)
         fixtures = []
         for i in range(len(shuffled)):
             for j in range(i+1, len(shuffled)):
                 fixtures.append((shuffled[i], shuffled[j]))
-                fixtures.append((shuffled[j], shuffled[i]))  # Return fixture
+                fixtures.append((shuffled[j], shuffled[i]))
         random.shuffle(fixtures)
         return fixtures
     
     elif phase == "Phase 3: The Standoff":
-        # For 3 teams: 2nd vs 3rd in Sudden Death Semi-Final (2 legs)
-        # First, determine standings
         standings = get_cumulative_standings()
         if len(standings) < 3: return []
         
-        # Sort by points (highest first)
         standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
         
         leader = standings[0]['Team']
@@ -279,82 +258,34 @@ def generate_fixtures_for_phase(teams, phase):
         st.session_state.bye_team = leader
         st.session_state.news.insert(0, f"👑 {leader} gets automatic BYE to Grand Final!")
         
-        # 2nd vs 3rd play two legs
         return [(second, third), (third, second)]
     
     elif phase == "Phase 4: The Grand Final":
-        # For 2 teams: one final match
         return [(shuffled[0], shuffled[1])]
     
     return []
 
 def get_cumulative_standings():
-    """Get current cumulative standings for all active teams"""
+    """Get current cumulative standings for all active teams - FIXED VERSION"""
     standings = []
     
-    # Start with cumulative stats if they exist
-    cumulative = st.session_state.cumulative_stats.copy()
-    
-    # Add current round results
-    for mid, res in st.session_state.results.items():
-        try:
-            if "_" in mid:
-                base = mid.split('_')[0]
-            else:
-                base = mid
-            
-            if "v" in base:
-                h, a = base.split('v')
-            else:
-                continue
-        except: continue
-        
-        # Initialize teams in cumulative stats
-        if h not in cumulative:
-            cumulative[h] = {'P': 0, 'W': 0, 'D': 0, 'L': 0, 'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0}
-        if a not in cumulative:
-            cumulative[a] = {'P': 0, 'W': 0, 'D': 0, 'L': 0, 'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0}
-        
-        s_h, s_a = res[0], res[1]
-        
-        cumulative[h]['P'] += 1
-        cumulative[a]['P'] += 1
-        cumulative[h]['GF'] += s_h
-        cumulative[h]['GA'] += s_a
-        cumulative[h]['GD'] += (s_h - s_a)
-        cumulative[a]['GF'] += s_a
-        cumulative[a]['GA'] += s_h
-        cumulative[a]['GD'] += (s_a - s_h)
-        
-        if s_h > s_a:
-            cumulative[h]['W'] += 1
-            cumulative[h]['Pts'] += 3
-            cumulative[a]['L'] += 1
-        elif s_a > s_h:
-            cumulative[a]['W'] += 1
-            cumulative[a]['Pts'] += 3
-            cumulative[h]['L'] += 1
-        else:
-            cumulative[h]['D'] += 1
-            cumulative[h]['Pts'] += 1
-            cumulative[a]['D'] += 1
-            cumulative[a]['Pts'] += 1
-    
-    # Convert to list format
+    # DIRECTLY use cumulative stats - this is the key fix
     for team in st.session_state.active_teams:
-        if team in cumulative:
+        if team in st.session_state.cumulative_stats:
+            stats = st.session_state.cumulative_stats[team]
             standings.append({
                 'Team': team,
-                'P': cumulative[team]['P'],
-                'W': cumulative[team]['W'],
-                'D': cumulative[team]['D'],
-                'L': cumulative[team]['L'],
-                'GF': cumulative[team]['GF'],
-                'GA': cumulative[team]['GA'],
-                'GD': cumulative[team]['GD'],
-                'Pts': cumulative[team]['Pts']
+                'P': stats.get('P', 0),
+                'W': stats.get('W', 0),
+                'D': stats.get('D', 0),
+                'L': stats.get('L', 0),
+                'GF': stats.get('GF', 0),
+                'GA': stats.get('GA', 0),
+                'GD': stats.get('GD', 0),
+                'Pts': stats.get('Pts', 0)
             })
         else:
+            # Initialize with zeros if no stats yet
             standings.append({
                 'Team': team,
                 'P': 0, 'W': 0, 'D': 0, 'L': 0,
@@ -363,126 +294,52 @@ def get_cumulative_standings():
     
     return standings
 
-def update_cumulative_player_stats():
-    """Update cumulative player stats from current round results"""
-    # Start with existing cumulative player stats
-    player_stats = st.session_state.cumulative_player_stats.copy()
+def process_player_string_update(raw_str, team, stat_type):
+    """Helper function to update player stats from a string"""
+    if not raw_str: return
     
-    # Process all matches in current round
-    for mid, res in st.session_state.results.items():
-        try:
-            if "_" in mid:
-                base = mid.split('_')[0]
-            else:
-                base = mid
-            
-            if "v" in base:
-                h, a = base.split('v')
-            else:
-                continue
-        except: continue
-        
-        meta = st.session_state.match_meta.get(mid, {})
-        
-        def process_player_string(raw_str, team, stat_type):
-            if not raw_str: return
-            parts = raw_str.split(',')
-            for p in parts:
-                p = p.strip()
-                if not p: continue
-                count = 1
-                name = p
-                m_br = re.search(r'^(.*?)\s*\((\d+)\)$', p)
-                m_x = re.search(r'^(.*?)\s*[xX](\d+)$', p)
-                if m_br: name = m_br.group(1); count = int(m_br.group(2))
-                elif m_x: name = m_x.group(1); count = int(m_x.group(2))
-                name = name.strip().title()
-                
-                # Create unique player ID (name + team)
-                player_id = f"{name}|{team}"
-                
-                # Initialize player stats if not exists
-                if player_id not in player_stats:
-                    player_stats[player_id] = {
-                        'Name': name,
-                        'Team': team,
-                        'G': 0, 'A': 0, 'R': 0
-                    }
-                
-                # Add stats
-                player_stats[player_id][stat_type] += count
-        
-        # Process goals, assists, red cards
-        process_player_string(meta.get('h_s', ''), h, 'G')
-        process_player_string(meta.get('a_s', ''), a, 'G')
-        process_player_string(meta.get('h_a', ''), h, 'A')
-        process_player_string(meta.get('a_a', ''), a, 'A')
-        process_player_string(meta.get('h_r', ''), h, 'R')
-        process_player_string(meta.get('a_r', ''), a, 'R')
+    # First, split by commas
+    raw_parts = raw_str.split(',')
     
-    # Save back to session state
-    st.session_state.cumulative_player_stats = player_stats
-
-def get_current_player_stats():
-    """Get cumulative player stats combined with current round"""
-    # Start with cumulative player stats
-    player_stats = st.session_state.cumulative_player_stats.copy()
-    
-    # Add current round results to show live updates
-    for mid, res in st.session_state.results.items():
-        try:
-            if "_" in mid:
-                base = mid.split('_')[0]
-            else:
-                base = mid
-            
-            if "v" in base:
-                h, a = base.split('v')
-            else:
-                continue
-        except: continue
+    for raw_player in raw_parts:
+        raw_player = raw_player.strip()
+        if not raw_player: continue
         
-        meta = st.session_state.match_meta.get(mid, {})
+        count = 1
+        name = raw_player
         
-        def process_player_string_live(raw_str, team, stat_type):
-            if not raw_str: return
-            parts = raw_str.split(',')
-            for p in parts:
-                p = p.strip()
-                if not p: continue
-                count = 1
-                name = p
-                m_br = re.search(r'^(.*?)\s*\((\d+)\)$', p)
-                m_x = re.search(r'^(.*?)\s*[xX](\d+)\)$', p)
-                if m_br: name = m_br.group(1); count = int(m_br.group(2))
-                elif m_x: name = m_x.group(1); count = int(m_x.group(2))
-                name = name.strip().title()
-                
-                player_id = f"{name}|{team}"
-                
-                if player_id not in player_stats:
-                    player_stats[player_id] = {
-                        'Name': name,
-                        'Team': team,
-                        'G': 0, 'A': 0, 'R': 0
-                    }
-                
-                player_stats[player_id][stat_type] += count
+        # Handle different formats
+        # Format 1: "Player (2)" - parentheses
+        m_br = re.search(r'^(.*?)\s*\((\d+)\)$', raw_player)
+        if m_br:
+            name = m_br.group(1).strip()
+            count = int(m_br.group(2))
+        # Format 2: "Player x2" - x notation
+        m_x = re.search(r'^(.*?)\s*[xX](\d+)$', raw_player)
+        if m_x:
+            name = m_x.group(1).strip()
+            count = int(m_x.group(2))
         
-        process_player_string_live(meta.get('h_s', ''), h, 'G')
-        process_player_string_live(meta.get('a_s', ''), a, 'G')
-        process_player_string_live(meta.get('h_a', ''), h, 'A')
-        process_player_string_live(meta.get('a_a', ''), a, 'A')
-        process_player_string_live(meta.get('h_r', ''), h, 'R')
-        process_player_string_live(meta.get('a_r', ''), a, 'R')
-    
-    return player_stats
+        # Clean up name
+        name = name.strip().title()
+        if not name: continue
+        
+        # Create unique player ID
+        player_id = f"{name}|{team}"
+        
+        # Initialize if not exists
+        if player_id not in st.session_state.cumulative_player_stats:
+            st.session_state.cumulative_player_stats[player_id] = {
+                'Name': name,
+                'Team': team,
+                'G': 0, 'A': 0, 'R': 0
+            }
+        
+        # Add stats
+        st.session_state.cumulative_player_stats[player_id][stat_type] += count
 
 def handle_battle_royale_elimination():
-    """Execute your exact Battle Royale protocol"""
-    # FIRST: Update cumulative player stats before elimination
-    update_cumulative_player_stats()
-    
+    """Execute Battle Royale protocol - UPDATED VERSION"""
     standings = get_cumulative_standings()
     
     # Sort by Points → GD → GF
@@ -493,13 +350,13 @@ def handle_battle_royale_elimination():
     # DETERMINE CURRENT PHASE
     if remaining >= 5:
         phase = "Phase 1: The Purge"
-        elim_count = 2  # Bottom 2 teams eliminated
+        elim_count = 2
     elif remaining == 4:
         phase = "Phase 2: The Squeeze"
-        elim_count = 1  # Bottom 1 team eliminated
+        elim_count = 1
     elif remaining == 3:
         phase = "Phase 3: The Standoff"
-        elim_count = 0  # Special elimination handled differently
+        elim_count = 0
     elif remaining == 2:
         phase = "Phase 4: The Grand Final"
         elim_count = 0
@@ -521,7 +378,6 @@ def handle_battle_royale_elimination():
     eliminated_this_round = []
     
     if phase == "Phase 1: The Purge":
-        # Eliminate bottom 2 teams
         bottom_teams = standings[-2:]
         for team_data in bottom_teams:
             team = team_data['Team']
@@ -539,7 +395,6 @@ def handle_battle_royale_elimination():
             st.session_state.news.insert(0, f"💀 PURGED: {', '.join(eliminated_this_round)} eliminated!")
     
     elif phase == "Phase 2: The Squeeze":
-        # Eliminate bottom 1 team
         bottom_team = standings[-1]['Team']
         if bottom_team in st.session_state.active_teams:
             st.session_state.active_teams.remove(bottom_team)
@@ -555,25 +410,19 @@ def handle_battle_royale_elimination():
             st.session_state.news.insert(0, f"💀 SQUEEZED OUT: {bottom_team} eliminated!")
     
     elif phase == "Phase 3: The Standoff":
-        # Special phase: No elimination here, just generate sudden death fixtures
-        # If sudden death matches are already completed, handle elimination
         if st.session_state.sudden_death_round >= 2:
-            # Both sudden death matches have been played
-            # Determine loser based on aggregate score
             leader = standings[0]['Team']
             second = standings[1]['Team']
             third = standings[2]['Team']
             
-            # Check results of sudden death matches
             match1_id = f"{second}v{third}_0"
             match2_id = f"{third}v{second}_1"
             
             res1 = st.session_state.results.get(match1_id, [0, 0])
             res2 = st.session_state.results.get(match2_id, [0, 0])
             
-            # Calculate aggregate
-            second_goals = res1[0] + res2[1]  # Second's goals in both legs
-            third_goals = res1[1] + res2[0]   # Third's goals in both legs
+            second_goals = res1[0] + res2[1]
+            third_goals = res1[1] + res2[0]
             
             if second_goals > third_goals:
                 loser = third
@@ -582,17 +431,14 @@ def handle_battle_royale_elimination():
                 loser = second
                 winner = third
             else:
-                # Tie - use penalties if recorded
                 if len(res1) > 2 and len(res2) > 2:
                     second_pens = res1[2] + res2[3]
                     third_pens = res1[3] + res2[2]
                     loser = third if second_pens > third_pens else second
                     winner = second if second_pens > third_pens else third
                 else:
-                    # Still tied - eliminate based on cumulative standings
                     loser = third if standings[1]['Pts'] > standings[2]['Pts'] else second
             
-            # Eliminate loser
             if loser in st.session_state.active_teams:
                 st.session_state.active_teams.remove(loser)
                 eliminated_this_round.append(loser)
@@ -605,25 +451,8 @@ def handle_battle_royale_elimination():
                 })
                 st.session_state.news.insert(0, f"💀 SUDDEN DEATH: {loser} eliminated! {winner} advances to Final!")
             
-            # Reset sudden death counter
             st.session_state.sudden_death_round = 0
             st.session_state.bye_team = None
-    
-    # Save cumulative team stats before generating new fixtures
-    for team_data in standings:
-        team = team_data['Team']
-        if team in st.session_state.active_teams:
-            if team not in st.session_state.cumulative_stats:
-                st.session_state.cumulative_stats[team] = {}
-            
-            st.session_state.cumulative_stats[team]['P'] = team_data['P']
-            st.session_state.cumulative_stats[team]['W'] = team_data['W']
-            st.session_state.cumulative_stats[team]['D'] = team_data['D']
-            st.session_state.cumulative_stats[team]['L'] = team_data['L']
-            st.session_state.cumulative_stats[team]['GF'] = team_data['GF']
-            st.session_state.cumulative_stats[team]['GA'] = team_data['GA']
-            st.session_state.cumulative_stats[team]['GD'] = team_data['GD']
-            st.session_state.cumulative_stats[team]['Pts'] = team_data['Pts']
     
     # Generate next round fixtures
     next_fixtures = generate_fixtures_for_phase(st.session_state.active_teams, phase)
@@ -641,7 +470,7 @@ def handle_battle_royale_elimination():
     else:
         st.session_state.current_round = f"Round {st.session_state.round_number} • {phase}"
     
-    # Reset match data for next round (but player stats are saved in cumulative_player_stats)
+    # Reset match data for next round
     st.session_state.results = {}
     st.session_state.match_meta = {}
     
@@ -655,6 +484,84 @@ def handle_battle_royale_elimination():
     
     save_data_internal()
     st.rerun()
+
+def verify_data_consistency():
+    """Check if cumulative stats match with recorded results"""
+    mismatches = []
+    recalculated_stats = {}
+    
+    # Initialize all active teams
+    for team in st.session_state.active_teams:
+        recalculated_stats[team] = {
+            'P': 0, 'W': 0, 'D': 0, 'L': 0, 
+            'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
+        }
+    
+    # Recalculate from all recorded results
+    for mid, res in st.session_state.results.items():
+        try:
+            if "_" in mid:
+                base = mid.split('_')[0]
+            else:
+                base = mid
+            
+            if "v" in base:
+                h, a = base.split('v')
+            else:
+                continue
+        except:
+            continue
+        
+        # Skip if teams are not active (shouldn't happen but just in case)
+        if h not in recalculated_stats:
+            recalculated_stats[h] = {'P': 0, 'W': 0, 'D': 0, 'L': 0, 'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0}
+        if a not in recalculated_stats:
+            recalculated_stats[a] = {'P': 0, 'W': 0, 'D': 0, 'L': 0, 'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0}
+        
+        s_h, s_a = res[0], res[1]
+        
+        # Update recalculated stats
+        recalculated_stats[h]['P'] += 1
+        recalculated_stats[a]['P'] += 1
+        recalculated_stats[h]['GF'] += s_h
+        recalculated_stats[h]['GA'] += s_a
+        recalculated_stats[h]['GD'] += (s_h - s_a)
+        recalculated_stats[a]['GF'] += s_a
+        recalculated_stats[a]['GA'] += s_h
+        recalculated_stats[a]['GD'] += (s_a - s_h)
+        
+        if s_h > s_a:
+            recalculated_stats[h]['W'] += 1
+            recalculated_stats[h]['Pts'] += 3
+            recalculated_stats[a]['L'] += 1
+        elif s_a > s_h:
+            recalculated_stats[a]['W'] += 1
+            recalculated_stats[a]['Pts'] += 3
+            recalculated_stats[h]['L'] += 1
+        else:
+            recalculated_stats[h]['D'] += 1
+            recalculated_stats[h]['Pts'] += 1
+            recalculated_stats[a]['D'] += 1
+            recalculated_stats[a]['Pts'] += 1
+    
+    # Compare with stored cumulative stats
+    for team in st.session_state.active_teams:
+        if team in st.session_state.cumulative_stats and team in recalculated_stats:
+            stored = st.session_state.cumulative_stats[team]
+            calculated = recalculated_stats[team]
+            
+            for key in ['P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts']:
+                stored_val = stored.get(key, 0)
+                calculated_val = calculated.get(key, 0)
+                if stored_val != calculated_val:
+                    mismatches.append({
+                        'team': team,
+                        'key': key,
+                        'stored': stored_val,
+                        'calculated': calculated_val
+                    })
+    
+    return mismatches, recalculated_stats
 
 if 'init' not in st.session_state:
     load_data()
@@ -715,10 +622,52 @@ with st.sidebar:
                 if "Survival" in st.session_state.format:
                     handle_battle_royale_elimination()
                 else:
-                    # Original logic for other formats
-                    # ... (unchanged from previous code)
                     save_data_internal()
                     st.rerun()
+
+        st.markdown("---")
+        st.markdown("### 🐛 DEBUG TOOLS")
+        
+        if st.button("🔄 Refresh Table View"):
+            st.rerun()
+        
+        if st.button("📊 Show Current Cumulative Stats"):
+            st.write("Cumulative Team Stats:")
+            st.json(st.session_state.cumulative_stats)
+            st.write("Cumulative Player Stats:")
+            st.json(st.session_state.cumulative_player_stats)
+            st.write("Current Results:")
+            st.json(st.session_state.results)
+        
+        if st.button("🔍 Check Data Consistency"):
+            mismatches, recalculated = verify_data_consistency()
+            if mismatches:
+                st.error(f"Found {len(mismatches)} mismatches!")
+                for m in mismatches:
+                    st.write(f"{m['team']}: {m['key']} - Stored: {m['stored']}, Calculated: {m['calculated']}")
+                
+                if st.button("🔄 Fix All Mismatches"):
+                    for team, stats in recalculated.items():
+                        st.session_state.cumulative_stats[team] = stats
+                    save_data_internal()
+                    st.success("Fixed all mismatches!")
+                    st.rerun()
+            else:
+                st.success("All data is consistent! ✅")
+        
+        if st.button("🧹 Clear All Stats & Start Over"):
+            st.session_state.cumulative_stats = {}
+            st.session_state.cumulative_player_stats = {}
+            for team in st.session_state.active_teams:
+                st.session_state.cumulative_stats[team] = {
+                    'P': 0, 'W': 0, 'D': 0, 'L': 0, 
+                    'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
+                }
+            st.session_state.results = {}
+            st.session_state.match_meta = {}
+            save_data_internal()
+            st.success("Stats cleared! Re-enter match results.")
+            st.rerun()
 
         st.markdown("---")
         st.markdown("### ⚙️ TEAM EDITOR")
@@ -733,7 +682,6 @@ with st.sidebar:
                     st.session_state.active_teams.append(new_team)
                     
                     if "Survival" in st.session_state.format:
-                        # In Battle Royale, new team starts with 0 cumulative points
                         st.session_state.cumulative_stats[new_team] = {
                             'P': 0, 'W': 0, 'D': 0, 'L': 0, 
                             'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
@@ -836,14 +784,13 @@ if not st.session_state.started:
                 st.session_state.active_teams = st.session_state.teams.copy()
                 
                 if "Survival" in fmt:
-                    # Initialize Battle Royale
                     st.session_state.eliminated_teams = []
                     st.session_state.round_number = 1
                     st.session_state.survival_history = []
                     st.session_state.battle_phase = "Phase 1: The Purge"
                     st.session_state.bye_team = None
                     st.session_state.cumulative_stats = {}
-                    st.session_state.cumulative_player_stats = {}  # Initialize player stats
+                    st.session_state.cumulative_player_stats = {}
                     st.session_state.sudden_death_round = 0
                     st.session_state.phase1_match_count = 2
                     
@@ -854,7 +801,6 @@ if not st.session_state.started:
                             'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
                         }
                     
-                    # Generate first round fixtures
                     matches = generate_fixtures_for_phase(st.session_state.teams, "Phase 1: The Purge")
                     st.session_state.fixtures = matches
                     st.session_state.current_round = f"Round 1 • {st.session_state.battle_phase}"
@@ -892,7 +838,6 @@ else:
                 st.info("No teams remaining")
                 return
             
-            # Sort by Points → GD → GF
             standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
             
             rows = []
@@ -900,7 +845,6 @@ else:
                 team = s['Team']
                 badge = st.session_state.team_badges.get(team, "🛡️")
                 
-                # Determine row class based on position and phase
                 row_class = ""
                 if st.session_state.battle_phase == "Phase 1: The Purge" and idx >= len(standings) - 2:
                     row_class = "drop-zone"
@@ -920,7 +864,6 @@ else:
             if rows:
                 df = pd.DataFrame(rows)
                 
-                # Highlight drop zone
                 st.markdown(f"**Teams Alive:** {len(st.session_state.active_teams)} | **Current Phase:** {st.session_state.battle_phase}")
                 
                 if st.session_state.battle_phase == "Phase 1: The Purge":
@@ -989,10 +932,8 @@ else:
         elif "League" in st.session_state.format:
             render_league_table()
         elif "World" in st.session_state.format and "Group" in st.session_state.current_round:
-            # Render group tables...
             pass
         else:
-            # Render knockout bracket...
             pass
 
     with tab2:
@@ -1007,7 +948,6 @@ else:
             mid = f"{h}v{a}_{i}" 
             res = st.session_state.results.get(mid)
             
-            # Check if this is a sudden death match
             is_sudden_death = (
                 st.session_state.battle_phase == "Phase 3: The Standoff" and 
                 st.session_state.sudden_death_round > 0
@@ -1043,7 +983,7 @@ else:
                     else:
                         c2.markdown(f"<h1 style='text-align:center; color:#64748b'>VS</h1>", unsafe_allow_html=True)
                 
-                # Match reporting
+                # Match reporting - FIXED SECTION
                 if st.session_state.admin_unlock and not st.session_state.champion: 
                     with st.expander(f"📝 REPORT MATCH {i+1}"):
                         if is_sudden_death:
@@ -1054,7 +994,6 @@ else:
                         s2 = ac2.number_input(f"{a}", 0, 20, key=f"s2_{mid}") 
                         p1, p2 = 0, 0
                         
-                        # Penalties for sudden death or non-league formats
                         if (s1 == s2 and "League" not in st.session_state.format) or is_sudden_death:
                             st.caption("Penalties (if tied)")
                             p1 = ac1.number_input(f"P {h}", 0, 20, key=f"p1_{mid}")
@@ -1070,46 +1009,72 @@ else:
                         ar = sc2.text_input("Red A", value=prev.get('a_r',''), key=f"ra_{mid}")
                         
                         if st.button("CONFIRM RESULT", key=f"b_{mid}"):
+                            # Store result
                             if (s1 == s2 and "League" not in st.session_state.format) or is_sudden_death:
                                 st.session_state.results[mid] = [s1, s2, p1, p2]
                             else:
                                 st.session_state.results[mid] = [s1, s2]
                             
-                            st.session_state.match_meta[mid] = {'h_s': gs1, 'a_s': gs2, 'h_a': ha, 'a_a': aa, 'h_r': hr, 'a_r': ar}
+                            # Store match meta
+                            st.session_state.match_meta[mid] = {
+                                'h_s': gs1, 'a_s': gs2, 
+                                'h_a': ha, 'a_a': aa, 
+                                'h_r': hr, 'a_r': ar
+                            }
                             
-                            # Update cumulative stats immediately
-                            if h in st.session_state.cumulative_stats and a in st.session_state.cumulative_stats:
-                                st.session_state.cumulative_stats[h]['P'] += 1
-                                st.session_state.cumulative_stats[a]['P'] += 1
-                                st.session_state.cumulative_stats[h]['GF'] += s1
-                                st.session_state.cumulative_stats[h]['GA'] += s2
-                                st.session_state.cumulative_stats[h]['GD'] += (s1 - s2)
-                                st.session_state.cumulative_stats[a]['GF'] += s2
-                                st.session_state.cumulative_stats[a]['GA'] += s1
-                                st.session_state.cumulative_stats[a]['GD'] += (s2 - s1)
-                                
-                                if s1 > s2:
-                                    st.session_state.cumulative_stats[h]['W'] += 1
-                                    st.session_state.cumulative_stats[h]['Pts'] += 3
-                                    st.session_state.cumulative_stats[a]['L'] += 1
-                                elif s2 > s1:
-                                    st.session_state.cumulative_stats[a]['W'] += 1
-                                    st.session_state.cumulative_stats[a]['Pts'] += 3
-                                    st.session_state.cumulative_stats[h]['L'] += 1
-                                else:
-                                    st.session_state.cumulative_stats[h]['D'] += 1
-                                    st.session_state.cumulative_stats[h]['Pts'] += 1
-                                    st.session_state.cumulative_stats[a]['D'] += 1
-                                    st.session_state.cumulative_stats[a]['Pts'] += 1
+                            # FIX: Update cumulative stats immediately
+                            # Initialize cumulative stats if not exists
+                            if h not in st.session_state.cumulative_stats:
+                                st.session_state.cumulative_stats[h] = {
+                                    'P': 0, 'W': 0, 'D': 0, 'L': 0, 
+                                    'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
+                                }
+                            if a not in st.session_state.cumulative_stats:
+                                st.session_state.cumulative_stats[a] = {
+                                    'P': 0, 'W': 0, 'D': 0, 'L': 0, 
+                                    'GF': 0, 'GA': 0, 'GD': 0, 'Pts': 0
+                                }
+                            
+                            # Update cumulative team stats
+                            st.session_state.cumulative_stats[h]['P'] += 1
+                            st.session_state.cumulative_stats[a]['P'] += 1
+                            st.session_state.cumulative_stats[h]['GF'] += s1
+                            st.session_state.cumulative_stats[h]['GA'] += s2
+                            st.session_state.cumulative_stats[h]['GD'] += (s1 - s2)
+                            st.session_state.cumulative_stats[a]['GF'] += s2
+                            st.session_state.cumulative_stats[a]['GA'] += s1
+                            st.session_state.cumulative_stats[a]['GD'] += (s2 - s1)
+                            
+                            if s1 > s2:
+                                st.session_state.cumulative_stats[h]['W'] += 1
+                                st.session_state.cumulative_stats[h]['Pts'] += 3
+                                st.session_state.cumulative_stats[a]['L'] += 1
+                            elif s2 > s1:
+                                st.session_state.cumulative_stats[a]['W'] += 1
+                                st.session_state.cumulative_stats[a]['Pts'] += 3
+                                st.session_state.cumulative_stats[h]['L'] += 1
+                            else:
+                                st.session_state.cumulative_stats[h]['D'] += 1
+                                st.session_state.cumulative_stats[h]['Pts'] += 1
+                                st.session_state.cumulative_stats[a]['D'] += 1
+                                st.session_state.cumulative_stats[a]['Pts'] += 1
+                            
+                            # FIX: Update player stats immediately
+                            process_player_string_update(gs1, h, 'G')
+                            process_player_string_update(gs2, a, 'G')
+                            process_player_string_update(ha, h, 'A')
+                            process_player_string_update(aa, a, 'A')
+                            process_player_string_update(hr, h, 'R')
+                            process_player_string_update(ar, a, 'R')
                             
                             save_data_internal()
-                            st.success("UPDATED")
+                            st.success("✅ Match recorded! Table updated.")
                             st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
         # Get cumulative player stats
-        player_stats = get_current_player_stats()
+        player_stats = st.session_state.cumulative_player_stats
         
         if player_stats:
             # Convert to list for display
@@ -1228,7 +1193,7 @@ else:
             # News Feed
             if st.session_state.news:
                 st.markdown("### 📰 BATTLE NEWS")
-                for news_item in st.session_state.news[:5]:  # Show last 5 news items
+                for news_item in st.session_state.news[:5]:
                     st.markdown(f"• {news_item}")
             
             # Survival Progress
