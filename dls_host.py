@@ -374,8 +374,7 @@ def handle_battle_royale_elimination():
             st.session_state.news.insert(0, f"🏆 {st.session_state.champion} is the BATTLE ROYALE CHAMPION!")
             st.session_state.battle_phase = "CHAMPION CROWNED"
             save_data_internal()
-            st.rerun()
-            return
+            return # Don't rely on internal rerun, let the button handle it or next refresh
         
         # Update phase if changed
         if phase != st.session_state.battle_phase:
@@ -491,7 +490,7 @@ def handle_battle_royale_elimination():
         })
         
         save_data_internal()
-        st.rerun()
+        # Removed st.rerun() from inside try block to prevent exception swallowing
         
     except Exception as e:
         st.error(f"Error in elimination: {str(e)}")
@@ -637,6 +636,7 @@ with st.sidebar:
                 st.toast("Processing Elimination...", icon="💀")
                 if "Survival" in st.session_state.format:
                     handle_battle_royale_elimination()
+                    st.rerun()
                 else:
                     save_data_internal()
                     st.rerun()
