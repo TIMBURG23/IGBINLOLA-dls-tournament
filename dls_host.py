@@ -194,7 +194,11 @@ def generate_balanced_fixtures_fixed(teams, matches_per_team):
     fixtures = []
     available_pairs = all_possible.copy()
     
+    iterations = 0
     while available_pairs and min(team_match_counts.values()) < matches_per_team:
+        iterations += 1
+        if iterations > 2000: break # Safety break
+        
         for pair in available_pairs[:]:
             t1, t2 = pair
             if team_match_counts[t1] < matches_per_team and team_match_counts[t2] < matches_per_team:
@@ -206,23 +210,24 @@ def generate_balanced_fixtures_fixed(teams, matches_per_team):
         else:
             break
     
+    # Fallback to random pairings if balanced generation failed
     if min(team_match_counts.values()) < matches_per_team:
         needy_teams = [t for t in teams if team_match_counts[t] < matches_per_team]
         
         for i in range(len(needy_teams)):
             for j in range(i + 1, len(needy_teams)):
                 t1, t2 = needy_teams[i], needy_teams[j]
-                if team_match_counts[t1] < matches_per_team and team_match_counts[t2] < matches_per_team:
-                    existing = False
-                    for fix in fixtures:
-                        if (fix[0] == t1 and fix[1] == t2) or (fix[0] == t2 and fix[1] == t1):
-                            existing = True
-                            break
-                    
-                    if not existing:
-                        fixtures.append((t1, t2))
-                        team_match_counts[t1] += 1
-                        team_match_counts[t2] += 1
+                # Allow duplicates if absolutely necessary to get games
+                existing = False
+                for fix in fixtures:
+                    if (fix[0] == t1 and fix[1] == t2) or (fix[0] == t2 and fix[1] == t1):
+                        existing = True
+                        break
+                
+                if not existing or len(fixtures) < len(teams):
+                    fixtures.append((t1, t2))
+                    team_match_counts[t1] += 1
+                    team_match_counts[t2] += 1
     
     return fixtures
 
@@ -234,6 +239,8 @@ def generate_fixtures_for_phase(teams, phase):
     if phase == "Phase 1: The Purge":
         matches_per_team = 2
         fixtures = generate_balanced_fixtures_fixed(shuffled, matches_per_team)
+        if not fixtures: # Emergency fallback
+             fixtures = list(itertools.combinations(shuffled[:4], 2)) 
         return fixtures
     
     elif phase == "Phase 2: The Squeeze":
@@ -627,6 +634,7 @@ with st.sidebar:
         st.markdown("---")
         if st.session_state.started and not st.session_state.champion:
             if st.button("⏩ EXECUTE ELIMINATION & NEXT ROUND", key="execute_elim_btn"): 
+                st.toast("Processing Elimination...", icon="💀")
                 if "Survival" in st.session_state.format:
                     handle_battle_royale_elimination()
                 else:
