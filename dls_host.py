@@ -9,12 +9,7 @@ import copy
 from datetime import datetime
 
 # --- CONFIGURATION ---
-st.set_page_config(
-    page_title="DLS Ultra Manager", 
-    page_icon="⚽", 
-    layout="wide", 
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="DLS Ultra Manager", page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
 
 # --- CSS STYLING ---
 st.markdown("""
@@ -344,7 +339,7 @@ def process_player_string_update(raw_str, team, stat_type):
         st.session_state.cumulative_player_stats[player_id][stat_type] += count
 
 def handle_battle_royale_elimination():
-    """Execute Battle Royale protocol - FIXED FOR STREAMLIT CLOUD"""
+    """Execute Battle Royale protocol - UPDATED VERSION"""
     try:
         standings = get_cumulative_standings()
         
@@ -372,7 +367,7 @@ def handle_battle_royale_elimination():
             st.session_state.news.insert(0, f"🏆 {st.session_state.champion} is the BATTLE ROYALE CHAMPION!")
             st.session_state.battle_phase = "CHAMPION CROWNED"
             save_data_internal()
-            st.rerun()
+            st.experimental_rerun()
             return
         
         # Update phase if changed
@@ -488,15 +483,11 @@ def handle_battle_royale_elimination():
             'eliminated': eliminated_this_round
         })
         
-        # CRITICAL FIX: Save data BEFORE rerun
         save_data_internal()
-        
-        # Force a complete rerun
         st.experimental_rerun()
         
     except Exception as e:
         st.error(f"Error in elimination: {str(e)}")
-        # Still save data even if there's an error
         save_data_internal()
 
 def verify_data_consistency():
@@ -577,7 +568,7 @@ def verify_data_consistency():
     
     return mismatches, recalculated_stats
 
-# --- INITIALIZATION ---
+# Initialize session state
 if 'data_loaded' not in st.session_state:
     load_data()
     st.session_state.data_loaded = True
@@ -620,35 +611,35 @@ with st.sidebar:
     st.markdown("### 🔐 MANAGER ACCESS")
     
     if not st.session_state.admin_unlock:
-        pin = st.text_input("ENTER PIN", type="password")
+        pin = st.text_input("ENTER PIN", type="password", key="pin_input")
         if pin == "0209": 
             st.session_state.admin_unlock = True
             save_data_internal()
-            st.rerun()
+            st.experimental_rerun()
     
     if st.session_state.admin_unlock:
         st.success("ACCESS GRANTED")
-        if st.button("🔒 LOGOUT"):
+        if st.button("🔒 LOGOUT", key="logout_btn"):
             st.session_state.admin_unlock = False
             save_data_internal()
-            st.rerun()
+            st.experimental_rerun()
 
         st.markdown("---")
         if st.session_state.started and not st.session_state.champion:
-            if st.button("⏩ EXECUTE ELIMINATION & NEXT ROUND", key="execute_elimination"): 
+            if st.button("⏩ EXECUTE ELIMINATION & NEXT ROUND", key="execute_elim_btn"): 
                 if "Survival" in st.session_state.format:
                     handle_battle_royale_elimination()
                 else:
                     save_data_internal()
-                    st.rerun()
+                    st.experimental_rerun()
 
         st.markdown("---")
         st.markdown("### 🐛 DEBUG TOOLS")
         
-        if st.button("🔄 Refresh Table View", key="refresh_view"):
-            st.rerun()
+        if st.button("🔄 Refresh Table View", key="refresh_view_btn"):
+            st.experimental_rerun()
         
-        if st.button("📊 Show Current Cumulative Stats", key="show_stats"):
+        if st.button("📊 Show Current Cumulative Stats", key="show_stats_btn"):
             st.write("Cumulative Team Stats:")
             st.json(st.session_state.cumulative_stats)
             st.write("Cumulative Player Stats:")
@@ -656,23 +647,23 @@ with st.sidebar:
             st.write("Current Results:")
             st.json(st.session_state.results)
         
-        if st.button("🔍 Check Data Consistency", key="check_consistency"):
+        if st.button("🔍 Check Data Consistency", key="check_consistency_btn"):
             mismatches, recalculated = verify_data_consistency()
             if mismatches:
                 st.error(f"Found {len(mismatches)} mismatches!")
                 for m in mismatches:
                     st.write(f"{m['team']}: {m['key']} - Stored: {m['stored']}, Calculated: {m['calculated']}")
                 
-                if st.button("🔄 Fix All Mismatches", key="fix_mismatches"):
+                if st.button("🔄 Fix All Mismatches", key="fix_mismatches_btn"):
                     for team, stats in recalculated.items():
                         st.session_state.cumulative_stats[team] = stats
                     save_data_internal()
                     st.success("Fixed all mismatches!")
-                    st.rerun()
+                    st.experimental_rerun()
             else:
                 st.success("All data is consistent! ✅")
         
-        if st.button("🧹 Clear All Stats & Start Over", key="clear_stats"):
+        if st.button("🧹 Clear All Stats & Start Over", key="clear_stats_btn"):
             st.session_state.cumulative_stats = {}
             st.session_state.cumulative_player_stats = {}
             for team in st.session_state.active_teams:
@@ -684,13 +675,13 @@ with st.sidebar:
             st.session_state.match_meta = {}
             save_data_internal()
             st.success("Stats cleared! Re-enter match results.")
-            st.rerun()
+            st.experimental_rerun()
 
         st.markdown("---")
         st.markdown("### ⚙️ TEAM EDITOR")
         new_team = st.text_input("REGISTER NEW CLUB", key="new_team_input")
         
-        if st.button("ADD CLUB", key="add_club"):
+        if st.button("ADD CLUB", key="add_club_btn"):
             if new_team and new_team not in st.session_state.teams:
                 st.session_state.teams.append(new_team)
                 st.session_state.team_badges[new_team] = random.choice(BADGE_POOL)
@@ -708,23 +699,23 @@ with st.sidebar:
                         st.toast(f"✅ {new_team} joined!")
                 
                 save_data_internal()
-                st.rerun()
+                st.experimental_rerun()
 
-        edit_target = st.selectbox("SELECT CLUB", ["Select..."] + st.session_state.teams, key="select_club")
+        edit_target = st.selectbox("SELECT CLUB", ["Select..."] + st.session_state.teams, key="select_club_dropdown")
         if edit_target != "Select...":
             c1, c2 = st.columns(2)
-            if c1.button("🗑️ DELETE", key="delete_club"):
+            if c1.button("🗑️ DELETE", key="delete_club_btn"):
                 st.session_state.teams.remove(edit_target)
                 if edit_target in st.session_state.active_teams: st.session_state.active_teams.remove(edit_target)
                 save_data_internal()
-                st.rerun()
+                st.experimental_rerun()
             rename_val = c2.text_input("RENAME TO", value=edit_target, key="rename_input")
-            if c2.button("RENAME", key="rename_club"):
+            if c2.button("RENAME", key="rename_club_btn"):
                 idx = st.session_state.teams.index(edit_target)
                 st.session_state.teams[idx] = rename_val
                 st.session_state.team_badges[rename_val] = st.session_state.team_badges.pop(edit_target)
                 save_data_internal()
-                st.rerun()
+                st.experimental_rerun()
 
         st.markdown("---")
         st.markdown("### 💾 DATA MANAGEMENT")
@@ -748,9 +739,9 @@ with st.sidebar:
             "sudden_death_round": st.session_state.sudden_death_round,
             "phase1_match_count": st.session_state.phase1_match_count
         })
-        st.download_button("📥 DOWNLOAD BACKUP", data=current_data, file_name="dls_backup.json", mime="application/json", key="download_backup")
-        uploaded = st.file_uploader("📤 RESTORE BACKUP", type=['json'], key="upload_backup")
-        if uploaded and st.button("⚠️ RESTORE NOW", key="restore_backup"):
+        st.download_button("📥 DOWNLOAD BACKUP", data=current_data, file_name="dls_backup.json", mime="application/json", key="download_backup_btn")
+        uploaded = st.file_uploader("📤 RESTORE BACKUP", type=['json'], key="upload_backup_widget")
+        if uploaded and st.button("⚠️ RESTORE NOW", key="restore_backup_btn"):
             data = json.load(uploaded)
             st.session_state.teams = data["teams"]
             st.session_state.fixtures = [tuple(f) for f in data["fixtures"]] if isinstance(data["fixtures"], list) else []
@@ -775,11 +766,11 @@ with st.sidebar:
             st.session_state.sudden_death_round = data.get("sudden_death_round", 0)
             st.session_state.phase1_match_count = data.get("phase1_match_count", 2)
             save_data_internal()
-            st.rerun()
-        if st.button("🧨 FACTORY RESET", key="factory_reset"):
+            st.experimental_rerun()
+        if st.button("🧨 FACTORY RESET", key="factory_reset_btn"):
             st.session_state.clear()
             if os.path.exists(DB_FILE): os.remove(DB_FILE)
-            st.rerun()
+            st.experimental_rerun()
 
 # --- 🎮 MAIN INTERFACE ---
 if not st.session_state.started:
@@ -792,8 +783,8 @@ if not st.session_state.started:
 
     if st.session_state.admin_unlock: 
         st.markdown("### 🏆 SELECT FORMAT")
-        fmt = st.radio("", ["Home & Away League", "World Cup (Groups + Knockout)", "Classic Knockout", "Survival Mode (Battle Royale)"], horizontal=True, key="format_select")
-        if st.button("🚀 INITIALIZE SEASON", key="initialize_season"):
+        fmt = st.radio("", ["Home & Away League", "World Cup (Groups + Knockout)", "Classic Knockout", "Survival Mode (Battle Royale)"], horizontal=True, key="format_radio")
+        if st.button("🚀 INITIALIZE SEASON", key="init_season_btn"):
             if len(st.session_state.teams) < 2: st.error("Need 2+ Teams")
             else:
                 st.session_state.format = fmt
@@ -842,7 +833,7 @@ if not st.session_state.started:
                 
                 st.session_state.started = True
                 save_data_internal()
-                st.rerun()
+                st.experimental_rerun()
 
 else:
     tab1, tab2, tab3, tab4 = st.tabs(["📊 CUMULATIVE TABLE", "⚽ MATCH CENTER", "⭐ STATS", "💀 BATTLE INFO"])
@@ -900,7 +891,7 @@ else:
                 
                 # Show eliminated teams
                 if st.session_state.eliminated_teams:
-                    with st.expander(f"☠️ Eliminated Teams ({len(st.session_state.eliminated_teams)})"):
+                    with st.expander(f"☠️ Eliminated Teams ({len(st.session_state.eliminated_teams)})", key="eliminated_teams_expander"):
                         elim_data = []
                         for e in st.session_state.eliminated_teams:
                             elim_data.append({
@@ -954,7 +945,7 @@ else:
             pass
 
     with tab2:
-        filter_team = st.selectbox("FILTER TEAM", ["All"] + st.session_state.active_teams, key="filter_team")
+        filter_team = st.selectbox("FILTER TEAM", ["All"] + st.session_state.active_teams, key="team_filter")
         
         for i, fix in enumerate(st.session_state.fixtures): 
             if len(fix) < 2: continue
@@ -1000,9 +991,9 @@ else:
                     else:
                         c2.markdown(f"<h1 style='text-align:center; color:#64748b'>VS</h1>", unsafe_allow_html=True)
                 
-                # Match reporting - FIXED SECTION
+                # Match reporting - FIXED WITH UNIQUE KEYS
                 if st.session_state.admin_unlock and not st.session_state.champion: 
-                    with st.expander(f"📝 REPORT MATCH {i+1}", key=f"expander_{i}"):
+                    with st.expander(f"📝 REPORT MATCH {i+1}", key=f"match_expander_{mid}"):
                         if is_sudden_death:
                             st.warning("⚔️ **SUDDEN DEATH SEMI-FINAL:** Loser is ELIMINATED!")
                         
@@ -1086,7 +1077,7 @@ else:
                             
                             save_data_internal()
                             st.success("✅ Match recorded! Table updated.")
-                            st.rerun()
+                            st.experimental_rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
@@ -1128,7 +1119,7 @@ else:
                 show_stat(c3, "Red Cards", "Reds", "🟥")
                 
                 # Show total stats
-                with st.expander("📊 TOTAL TOURNAMENT STATS"):
+                with st.expander("📊 TOTAL TOURNAMENT STATS", key="total_stats_expander"):
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Total Players", len(df))
                     col2.metric("Total Goals", int(df['Goals'].sum()))
@@ -1144,7 +1135,7 @@ else:
             st.markdown("### 💀 BATTLE ROYALE PROTOCOL")
             
             # Protocol Rules
-            with st.expander("📜 THE CORE RULES", expanded=True):
+            with st.expander("📜 THE CORE RULES", expanded=True, key="core_rules_expander"):
                 st.markdown("""
                 **1. The "Cumulative" Table**
                 - Points carry over FOREVER
@@ -1159,7 +1150,7 @@ else:
                 - It is pure luck
                 """)
             
-            with st.expander("🩸 THE ELIMINATION PHASES"):
+            with st.expander("🩸 THE ELIMINATION PHASES", key="elimination_phases_expander"):
                 st.markdown("""
                 **Phase 1: The Purge (5+ Teams Alive)**
                 - Bottom 2 teams eliminated EVERY ROUND
@@ -1181,7 +1172,7 @@ else:
                 - Highest points total at the end wins the crown
                 """)
             
-            with st.expander("📊 TIE-BREAKERS (How to stay alive)"):
+            with st.expander("📊 TIE-BREAKERS (How to stay alive)", key="tie_breakers_expander"):
                 st.markdown("""
                 If teams are level on points near the Drop Zone:
                 1. **Points** (Highest wins)
@@ -1195,13 +1186,13 @@ else:
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Teams Alive", len(st.session_state.active_teams))
+                st.metric("Teams Alive", len(st.session_state.active_teams), key="teams_alive_metric")
             with col2:
-                st.metric("Round", st.session_state.round_number)
+                st.metric("Round", st.session_state.round_number, key="round_metric")
             with col3:
-                st.metric("Eliminated", len(st.session_state.eliminated_teams))
+                st.metric("Eliminated", len(st.session_state.eliminated_teams), key="eliminated_metric")
             with col4:
-                st.metric("Phase", st.session_state.battle_phase.split(":")[0])
+                st.metric("Phase", st.session_state.battle_phase.split(":")[0], key="phase_metric")
             
             # Show current match count info
             if st.session_state.battle_phase == "Phase 1: The Purge":
