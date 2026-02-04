@@ -11,6 +11,16 @@ from datetime import datetime
 # --- CONFIGURATION ---
 st.set_page_config(page_title="DLS Ultra Manager", page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
 
+# --- COMPATIBILITY SHIM (Fixes the Button Issue on Cloud) ---
+def safe_rerun():
+    """Handles rerun for both new and old Streamlit versions"""
+    if hasattr(st, 'rerun'):
+        st.rerun()
+    elif hasattr(st, 'experimental_rerun'):
+        st.experimental_rerun()
+    else:
+        st.error("Streamlit version too old. Please restart the app manually.")
+
 # --- CSS STYLING ---
 st.markdown("""
 <style>
@@ -374,7 +384,7 @@ def handle_battle_royale_elimination():
         st.session_state.news.insert(0, f"🏆 {st.session_state.champion} is the BATTLE ROYALE CHAMPION!")
         st.session_state.battle_phase = "CHAMPION CROWNED"
         save_data_internal()
-        st.rerun()
+        safe_rerun()
         return
     
     # Update phase if changed
@@ -491,7 +501,7 @@ def handle_battle_royale_elimination():
     })
     
     save_data_internal()
-    st.rerun()
+    safe_rerun()
 
 def verify_data_consistency():
     """Check if cumulative stats match with recorded results"""
@@ -618,14 +628,14 @@ with st.sidebar:
         if pin == "0209": 
             st.session_state.admin_unlock = True
             save_data_internal()
-            st.rerun()
+            safe_rerun()
     
     if st.session_state.admin_unlock:
         st.success("ACCESS GRANTED")
         if st.button("🔒 LOGOUT", key="logout_btn"):
             st.session_state.admin_unlock = False
             save_data_internal()
-            st.rerun()
+            safe_rerun()
 
         st.markdown("---")
         if st.session_state.started and not st.session_state.champion:
@@ -635,13 +645,13 @@ with st.sidebar:
                     handle_battle_royale_elimination()
                 else:
                     save_data_internal()
-                    st.rerun()
+                    safe_rerun()
 
         st.markdown("---")
         st.markdown("### 🐛 DEBUG TOOLS")
         
         if st.button("🔄 Refresh Table View", key="refresh_view_btn"):
-            st.rerun()
+            safe_rerun()
         
         if st.button("📊 Show Current Cumulative Stats", key="show_stats_btn"):
             st.write("Cumulative Team Stats:")
@@ -663,7 +673,7 @@ with st.sidebar:
                         st.session_state.cumulative_stats[team] = stats
                     save_data_internal()
                     st.success("Fixed all mismatches!")
-                    st.rerun()
+                    safe_rerun()
             else:
                 st.success("All data is consistent! ✅")
         
@@ -679,7 +689,7 @@ with st.sidebar:
             st.session_state.match_meta = {}
             save_data_internal()
             st.success("Stats cleared! Re-enter match results.")
-            st.rerun()
+            safe_rerun()
 
         st.markdown("---")
         st.markdown("### ⚙️ TEAM EDITOR")
@@ -703,7 +713,7 @@ with st.sidebar:
                         st.toast(f"✅ {new_team} joined!")
                 
                 save_data_internal()
-                st.rerun()
+                safe_rerun()
 
         edit_target = st.selectbox("SELECT CLUB", ["Select..."] + st.session_state.teams, key="select_club_dropdown")
         if edit_target != "Select...":
@@ -712,14 +722,14 @@ with st.sidebar:
                 st.session_state.teams.remove(edit_target)
                 if edit_target in st.session_state.active_teams: st.session_state.active_teams.remove(edit_target)
                 save_data_internal()
-                st.rerun()
+                safe_rerun()
             rename_val = c2.text_input("RENAME TO", value=edit_target, key="rename_input")
             if c2.button("RENAME", key="rename_club_btn"):
                 idx = st.session_state.teams.index(edit_target)
                 st.session_state.teams[idx] = rename_val
                 st.session_state.team_badges[rename_val] = st.session_state.team_badges.pop(edit_target)
                 save_data_internal()
-                st.rerun()
+                safe_rerun()
 
         st.markdown("---")
         st.markdown("### 💾 DATA MANAGEMENT")
@@ -770,11 +780,11 @@ with st.sidebar:
             st.session_state.sudden_death_round = data.get("sudden_death_round", 0)
             st.session_state.phase1_match_count = data.get("phase1_match_count", 2)
             save_data_internal()
-            st.rerun()
+            safe_rerun()
         if st.button("🧨 FACTORY RESET", key="factory_reset_btn"):
             st.session_state.clear()
             if os.path.exists(DB_FILE): os.remove(DB_FILE)
-            st.rerun()
+            safe_rerun()
 
 # --- 🎮 MAIN INTERFACE ---
 if not st.session_state.started:
@@ -837,7 +847,7 @@ if not st.session_state.started:
                 
                 st.session_state.started = True
                 save_data_internal()
-                st.rerun()
+                safe_rerun()
 
 else:
     tab1, tab2, tab3, tab4 = st.tabs(["📊 CUMULATIVE TABLE", "⚽ MATCH CENTER", "⭐ STATS", "💀 BATTLE INFO"])
@@ -1081,7 +1091,7 @@ else:
                             
                             save_data_internal()
                             st.success("✅ Match recorded! Table updated.")
-                            st.rerun()
+                            safe_rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
