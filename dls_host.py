@@ -1,5 +1,3 @@
-
-You said:
 import streamlit as st
 import pandas as pd
 import itertools
@@ -1246,3 +1244,4 @@ else:
 
 # --- FOOTER ---
 st.markdown("""<div class="footer">OFFICIAL DLS TOURNAMENT ENGINE <br> WRITTEN AND DESIGNED BY <span class="designer-name">OLUWATIMILEYIN IGBINLOLA</span></div>""", unsafe_allow_html=True)
+
