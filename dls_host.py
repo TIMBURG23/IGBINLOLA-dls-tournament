@@ -891,7 +891,7 @@ else:
                 
                 # Show eliminated teams
                 if st.session_state.eliminated_teams:
-                    with st.expander(f"☠️ Eliminated Teams ({len(st.session_state.eliminated_teams)})", key="eliminated_teams_expander"):
+                    with st.expander(f"☠️ Eliminated Teams ({len(st.session_state.eliminated_teams)})"):
                         elim_data = []
                         for e in st.session_state.eliminated_teams:
                             elim_data.append({
@@ -993,7 +993,7 @@ else:
                 
                 # Match reporting - FIXED WITH UNIQUE KEYS
                 if st.session_state.admin_unlock and not st.session_state.champion: 
-                    with st.expander(f"📝 REPORT MATCH {i+1}", key=f"match_expander_{mid}"):
+                    with st.expander(f"📝 REPORT MATCH {i+1}"):
                         if is_sudden_death:
                             st.warning("⚔️ **SUDDEN DEATH SEMI-FINAL:** Loser is ELIMINATED!")
                         
@@ -1119,7 +1119,7 @@ else:
                 show_stat(c3, "Red Cards", "Reds", "🟥")
                 
                 # Show total stats
-                with st.expander("📊 TOTAL TOURNAMENT STATS", key="total_stats_expander"):
+                with st.expander("📊 TOTAL TOURNAMENT STATS"):
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Total Players", len(df))
                     col2.metric("Total Goals", int(df['Goals'].sum()))
@@ -1135,7 +1135,7 @@ else:
             st.markdown("### 💀 BATTLE ROYALE PROTOCOL")
             
             # Protocol Rules
-            with st.expander("📜 THE CORE RULES", expanded=True, key="core_rules_expander"):
+            with st.expander("📜 THE CORE RULES", expanded=True):
                 st.markdown("""
                 **1. The "Cumulative" Table**
                 - Points carry over FOREVER
@@ -1150,7 +1150,7 @@ else:
                 - It is pure luck
                 """)
             
-            with st.expander("🩸 THE ELIMINATION PHASES", key="elimination_phases_expander"):
+            with st.expander("🩸 THE ELIMINATION PHASES"):
                 st.markdown("""
                 **Phase 1: The Purge (5+ Teams Alive)**
                 - Bottom 2 teams eliminated EVERY ROUND
@@ -1172,7 +1172,7 @@ else:
                 - Highest points total at the end wins the crown
                 """)
             
-            with st.expander("📊 TIE-BREAKERS (How to stay alive)", key="tie_breakers_expander"):
+            with st.expander("📊 TIE-BREAKERS (How to stay alive)"):
                 st.markdown("""
                 If teams are level on points near the Drop Zone:
                 1. **Points** (Highest wins)
