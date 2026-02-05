@@ -11,60 +11,166 @@ from datetime import datetime
 # --- CONFIGURATION ---
 st.set_page_config(page_title="DLS Ultra Manager", page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
 
-# --- COMPATIBILITY SHIM (Fixes the Button Issue on Cloud) ---
+# --- COMPATIBILITY SHIM (Fixes the Button Issue on Cloud & Local) ---
 def safe_rerun():
-    """Handles rerun for both new and old Streamlit versions"""
+    """Handles rerun for both new and old Streamlit versions automatically"""
     if hasattr(st, 'rerun'):
         st.rerun()
     elif hasattr(st, 'experimental_rerun'):
         st.experimental_rerun()
     else:
-        st.error("Streamlit version too old. Please restart the app manually.")
+        st.warning("⚠️ Auto-reload not supported. Please manually refresh your browser.")
 
-# --- CSS STYLING ---
+# --- CSS STYLING (Deep Burgundy & Golden Sand Theme) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&family=Rajdhani:wght@500;700&display=swap');
 
+    /* BASE THEME - DEEP BURGUNDY BACKGROUND */
     .stApp {
-        background-color: #09090b;
-        background-image: radial-gradient(circle at 50% 0%, #111827 0%, transparent 80%);
-        color: white;
+        background-color: #050101;
+        background-image: radial-gradient(circle at 50% -20%, #5B0E14 0%, #2a0408 50%, #000000 90%);
+        color: #F1E194;
     }
-    h1, h2, h3 { font-family: 'Teko', sans-serif !important; text-transform: uppercase; margin: 0 !important; }
+
+    /* TYPOGRAPHY - GOLD */
+    h1, h2, h3 { 
+        font-family: 'Teko', sans-serif !important; 
+        text-transform: uppercase; 
+        margin: 0 !important; 
+        color: #F1E194 !important;
+        letter-spacing: 1.5px;
+        text-shadow: 0px 2px 4px rgba(0,0,0,0.5);
+    }
+    
+    p, div, label, span, li {
+        font-family: 'Rajdhani', sans-serif;
+        color: #e2d2a3;
+    }
+
+    /* TITLES */
     .big-title {
         font-size: 5rem; font-weight: 700; text-align: center;
-        background: linear-gradient(180deg, #fff 0%, #64748b 100%);
+        background: linear-gradient(180deg, #F1E194 0%, #946c1e 100%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        text-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+        text-shadow: 0 0 40px rgba(91, 14, 20, 0.8);
+        margin-bottom: 20px;
     }
+
+    /* GLASS PANELS (Burgundy Tint + Gold Border) */
     .glass-panel {
-        background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); 
-        border-radius: 12px; padding: 20px; margin-bottom: 15px;
+        background: rgba(40, 5, 8, 0.7); 
+        border: 1px solid #F1E194; 
+        border-radius: 8px; 
+        padding: 20px; 
+        margin-bottom: 15px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(5px);
     }
+
+    /* INPUTS & SELECTBOXES */
     .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
-        background: rgba(0,0,0,0.6) !important; color: white !important; border: 1px solid #334155 !important;
+        background: rgba(0, 0, 0, 0.8) !important; 
+        color: #F1E194 !important; 
+        border: 1px solid #5B0E14 !important;
+        font-family: 'Rajdhani';
     }
+    
+    /* RADIO BUTTONS */
+    div[role="radiogroup"] label {
+        background: rgba(0, 0, 0, 0.5);
+        border: 1px solid #5B0E14;
+        padding: 10px;
+        border-radius: 5px;
+    }
+
+    /* BUTTONS (Gold Outline -> Gold Fill) */
     .stButton > button {
-        background: transparent; border: 1px solid #3b82f6; color: #3b82f6;
-        font-family: 'Rajdhani', sans-serif; font-weight: 700; text-transform: uppercase; width: 100%;
+        background: transparent; 
+        border: 1px solid #F1E194; 
+        color: #F1E194;
+        font-family: 'Rajdhani', sans-serif; 
+        font-weight: 700; 
+        text-transform: uppercase; 
+        width: 100%;
+        transition: all 0.3s ease;
     }
-    .stButton > button:hover { background: #3b82f6; color: white; }
-    .footer { text-align: center; padding: 20px; color: #475569; font-family: 'Rajdhani'; border-top: 1px solid #1e293b; margin-top: 50px; }
-    .designer-name { color: #3b82f6; font-weight: bold; letter-spacing: 1px; }
+    .stButton > button:hover { 
+        background: #F1E194; 
+        color: #5B0E14; 
+        border-color: #F1E194;
+        box-shadow: 0 0 20px rgba(241, 225, 148, 0.4);
+    }
+
+    /* DATAFRAME / TABLE STYLE OVERRIDES */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #5B0E14;
+        background-color: rgba(0,0,0,0.4);
+    }
+
+    /* FOOTER */
+    .footer { 
+        text-align: center; padding: 20px; 
+        color: #946c1e; 
+        font-family: 'Rajdhani'; 
+        border-top: 1px solid #5B0E14; 
+        margin-top: 50px; 
+    }
+    .designer-name { color: #F1E194; font-weight: bold; letter-spacing: 1px; }
+
+    /* SPECIAL STATUS CLASSES */
     .club-badge { font-size: 3rem; margin-bottom: 10px; }
-    .eliminated { opacity: 0.5; text-decoration: line-through; color: #ef4444 !important; }
-    .drop-zone { background: linear-gradient(90deg, rgba(239,68,68,0.2) 0%, rgba(239,68,68,0.05) 100%); border: 2px solid #ef4444; }
-    .safe-zone { background: linear-gradient(90deg, rgba(34,197,94,0.1) 0%, transparent 100%); border-left: 3px solid #22c55e; }
-    .bye-zone { background: linear-gradient(90deg, rgba(250,204,21,0.1) 0%, transparent 100%); border-left: 3px solid #facc15; }
-    .phase-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; margin-left: 10px; }
-    .phase-1 { background: #dc2626; color: white; }
-    .phase-2 { background: #ea580c; color: white; }
-    .phase-3 { background: #d97706; color: white; }
-    .phase-4 { background: #ca8a04; color: white; }
-    .phase-final { background: #fbbf24; color: #000; }
-    .sudden-death { background: linear-gradient(90deg, #000 0%, #dc2626 50%, #000 100%); color: white; border: 2px solid #dc2626; }
-    .golden-boot { color: #fbbf24; font-weight: bold; }
+    
+    .drop-zone { 
+        background: linear-gradient(90deg, rgba(139, 0, 0, 0.2) 0%, transparent 100%); 
+        border-left: 4px solid #ff4444; 
+        padding-left: 10px;
+    }
+    .safe-zone { 
+        background: linear-gradient(90deg, rgba(241, 225, 148, 0.1) 0%, transparent 100%); 
+        border-left: 4px solid #F1E194; 
+        padding-left: 10px;
+    }
+    .bye-zone { 
+        background: linear-gradient(90deg, rgba(255, 215, 0, 0.2) 0%, transparent 100%); 
+        border-left: 4px solid #FFD700; 
+        padding-left: 10px;
+    }
+
+    .phase-badge { 
+        display: inline-block; 
+        padding: 4px 12px; 
+        border-radius: 0px; 
+        font-size: 0.9rem; 
+        font-weight: bold; 
+        margin-left: 10px; 
+        border: 1px solid #F1E194; 
+        color: #F1E194; 
+        background: rgba(91, 14, 20, 0.8);
+    }
+    
+    .sudden-death { 
+        background: linear-gradient(90deg, #000 0%, #5B0E14 50%, #000 100%); 
+        color: white; 
+        border: 2px solid #ff0000; 
+    }
+    .golden-boot { color: #F1E194; font-weight: bold; font-size: 1.5rem; text-shadow: 0 0 10px #F1E194; }
+    
+    /* TOAST */
+    div[data-baseweb="toast"] {
+        background-color: #5B0E14 !important;
+        color: #F1E194 !important;
+        border: 1px solid #F1E194 !important;
+    }
+    
+    /* METRICS */
+    div[data-testid="stMetricValue"] {
+        color: #F1E194 !important;
+        font-family: 'Teko' !important;
+    }
+    div[data-testid="stMetricLabel"] {
+        color: #946c1e !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -594,14 +700,14 @@ st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
 # Special Battle Royale header
 if "Survival" in st.session_state.format:
     st.markdown(f"""
-    <div style="text-align: center; margin: 20px 0; padding: 15px; background: linear-gradient(90deg, #000 0%, #dc2626 50%, #000 100%); border-radius: 10px;">
-        <h2 style="color: white; font-family: 'Teko'; margin: 0;">💀 BATTLE ROYALE PROTOCOL</h2>
-        <p style="color: #fca5a5; font-family: 'Rajdhani'; margin: 5px 0 0 0;">"Survive the Cut. Trust No One."</p>
+    <div style="text-align: center; margin: 20px 0; padding: 15px; background: linear-gradient(90deg, #000 0%, #5B0E14 50%, #000 100%); border-radius: 10px; border: 1px solid #F1E194;">
+        <h2 style="color: #F1E194; font-family: 'Teko'; margin: 0;">💀 BATTLE ROYALE PROTOCOL</h2>
+        <p style="color: #F1E194; font-family: 'Rajdhani'; margin: 5px 0 0 0;">"Survive the Cut. Trust No One."</p>
     </div>
     """, unsafe_allow_html=True)
 
 if st.session_state.champion:
-    st.markdown(f'<div style="text-align: center; color:#FFD700; font-size: 2rem; font-family: Teko, sans-serif;">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color:#F1E194; font-size: 2rem; font-family: Teko, sans-serif;">👑 CHAMPION: {st.session_state.champion} 👑</div>', unsafe_allow_html=True)
 else:
     subtitle = f"{st.session_state.current_round}"
     if "Survival" in st.session_state.format:
@@ -617,7 +723,7 @@ else:
         
         subtitle = f"Round {st.session_state.round_number} • {st.session_state.battle_phase} {phase_badge}"
     
-    st.markdown(f'<div style="text-align: center; color: #94a3b8; font-family: Rajdhani, sans-serif; margin-bottom: 2rem;">{subtitle}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #F1E194; font-family: Rajdhani, sans-serif; margin-bottom: 2rem;">{subtitle}</div>', unsafe_allow_html=True)
 
 # --- 🔒 SIDEBAR ---
 with st.sidebar:
@@ -997,13 +1103,13 @@ else:
                 if res:
                     sc = f"{res[0]} - {res[1]}"
                     if len(res) > 2: sc += f"\n(P: {res[2]}-{res[3]})"
-                    score_color = "#ef4444" if is_sudden_death else "#3b82f6"
+                    score_color = "#ef4444" if is_sudden_death else "#F1E194"
                     c2.markdown(f"<h1 style='text-align:center; color:{score_color}'>{sc}</h1>", unsafe_allow_html=True)
                 else: 
                     if is_sudden_death:
                         c2.markdown(f"<h1 style='text-align:center; color:#ef4444'>⚔️ VS ⚔️</h1>", unsafe_allow_html=True)
                     else:
-                        c2.markdown(f"<h1 style='text-align:center; color:#64748b'>VS</h1>", unsafe_allow_html=True)
+                        c2.markdown(f"<h1 style='text-align:center; color:#946c1e'>VS</h1>", unsafe_allow_html=True)
                 
                 # Match reporting - FIXED WITH UNIQUE KEYS
                 if st.session_state.admin_unlock and not st.session_state.champion: 
@@ -1200,13 +1306,13 @@ else:
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Teams Alive", len(st.session_state.active_teams), key="teams_alive_metric")
+                st.metric("Teams Alive", len(st.session_state.active_teams))
             with col2:
-                st.metric("Round", st.session_state.round_number, key="round_metric")
+                st.metric("Round", st.session_state.round_number)
             with col3:
-                st.metric("Eliminated", len(st.session_state.eliminated_teams), key="eliminated_metric")
+                st.metric("Eliminated", len(st.session_state.eliminated_teams))
             with col4:
-                st.metric("Phase", st.session_state.battle_phase.split(":")[0], key="phase_metric")
+                st.metric("Phase", st.session_state.battle_phase.split(":")[0])
             
             # Show current match count info
             if st.session_state.battle_phase == "Phase 1: The Purge":
