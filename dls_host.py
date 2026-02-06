@@ -14,12 +14,24 @@ st.set_page_config(page_title="DLS Ultra Manager", page_icon="⚽", layout="wide
 # --- COMPATIBILITY SHIM (Fixes the Button Issue on Cloud & Local) ---
 def safe_rerun():
     """Handles rerun for both new and old Streamlit versions automatically"""
-    if hasattr(st, 'rerun'):
-        st.rerun()
-    elif hasattr(st, 'experimental_rerun'):
-        st.experimental_rerun()
-    else:
-        st.warning("⚠️ Auto-reload not supported. Please manually refresh your browser.")
+    try:
+        # Clear any existing output
+        st.cache_data.clear()
+        
+        # Try the new rerun first
+        if hasattr(st, 'rerun'):
+            st.rerun()
+        # Fallback to old rerun
+        elif hasattr(st, 'experimental_rerun'):
+            st.experimental_rerun()
+        else:
+            # Ultimate fallback
+            st.session_state.last_refresh = datetime.now().timestamp()
+            st.experimental_rerun()
+    except Exception as e:
+        # If all else fails, use session state flag
+        st.session_state.needs_refresh = True
+        st.warning(f"Please refresh the page manually to continue. Error: {e}")
 
 # --- CSS STYLING (Deep Burgundy & Golden Sand Theme) ---
 st.markdown("""
@@ -191,7 +203,8 @@ def init_defaults():
         'cumulative_stats': {},
         'cumulative_player_stats': {},
         'sudden_death_round': 0,
-        'phase1_match_count': 2
+        'phase1_match_count': 2,
+        'force_rerun': False  # Added for rerun handling
     }
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
@@ -462,152 +475,160 @@ def process_player_string_update(raw_str, team, stat_type):
         st.session_state.cumulative_player_stats[player_id][stat_type] += count
 
 def handle_battle_royale_elimination():
-    """Execute Battle Royale protocol - UPDATED VERSION"""
-    # Removed global try block to stop swallowing RerunException
-    standings = get_cumulative_standings()
-    
-    # Sort by Points → GD → GF
-    standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
-    
-    remaining = len(standings)
-    
-    # DETERMINE CURRENT PHASE
-    if remaining >= 5:
-        phase = "Phase 1: The Purge"
-        elim_count = 2
-    elif remaining == 4:
-        phase = "Phase 2: The Squeeze"
-        elim_count = 1
-    elif remaining == 3:
-        phase = "Phase 3: The Standoff"
-        elim_count = 0
-    elif remaining == 2:
-        phase = "Phase 4: The Grand Final"
-        elim_count = 0
-    else:
-        # Only 1 team left - CHAMPION!
-        st.session_state.champion = standings[0]['Team']
-        st.session_state.news.insert(0, f"🏆 {st.session_state.champion} is the BATTLE ROYALE CHAMPION!")
-        st.session_state.battle_phase = "CHAMPION CROWNED"
-        save_data_internal()
-        safe_rerun()
-        return
-    
-    # Update phase if changed
-    if phase != st.session_state.battle_phase:
-        st.session_state.battle_phase = phase
-        st.session_state.news.insert(0, f"🔁 PHASE CHANGE: {phase}")
-    
-    # Handle eliminations based on phase
-    eliminated_this_round = []
-    
-    if phase == "Phase 1: The Purge":
-        bottom_teams = standings[-2:]
-        for team_data in bottom_teams:
-            team = team_data['Team']
-            if team in st.session_state.active_teams:
-                st.session_state.active_teams.remove(team)
-                eliminated_this_round.append(team)
+    """Execute Battle Royale protocol - FIXED VERSION"""
+    try:
+        standings = get_cumulative_standings()
+        
+        # Sort by Points → GD → GF
+        standings.sort(key=lambda x: (x['Pts'], x['GD'], x['GF']), reverse=True)
+        
+        remaining = len(standings)
+        
+        # DETERMINE CURRENT PHASE
+        if remaining >= 5:
+            phase = "Phase 1: The Purge"
+            elim_count = 2
+        elif remaining == 4:
+            phase = "Phase 2: The Squeeze"
+            elim_count = 1
+        elif remaining == 3:
+            phase = "Phase 3: The Standoff"
+            elim_count = 0
+        elif remaining == 2:
+            phase = "Phase 4: The Grand Final"
+            elim_count = 0
+        else:
+            # Only 1 team left - CHAMPION!
+            st.session_state.champion = standings[0]['Team']
+            st.session_state.news.insert(0, f"🏆 {st.session_state.champion} is the BATTLE ROYALE CHAMPION!")
+            st.session_state.battle_phase = "CHAMPION CROWNED"
+            save_data_internal()
+            st.session_state.force_rerun = True
+            safe_rerun()
+            return
+        
+        # Update phase if changed
+        if phase != st.session_state.battle_phase:
+            st.session_state.battle_phase = phase
+            st.session_state.news.insert(0, f"🔁 PHASE CHANGE: {phase}")
+        
+        # Handle eliminations based on phase
+        eliminated_this_round = []
+        
+        if phase == "Phase 1: The Purge":
+            bottom_teams = standings[-2:]
+            for team_data in bottom_teams:
+                team = team_data['Team']
+                if team in st.session_state.active_teams:
+                    st.session_state.active_teams.remove(team)
+                    eliminated_this_round.append(team)
+                    st.session_state.eliminated_teams.append({
+                        'team': team,
+                        'round': st.session_state.round_number,
+                        'position': remaining - standings.index(team_data),
+                        'phase': phase
+                    })
+            
+            if eliminated_this_round:
+                st.session_state.news.insert(0, f"💀 PURGED: {', '.join(eliminated_this_round)} eliminated!")
+        
+        elif phase == "Phase 2: The Squeeze":
+            bottom_team = standings[-1]['Team']
+            if bottom_team in st.session_state.active_teams:
+                st.session_state.active_teams.remove(bottom_team)
+                eliminated_this_round.append(bottom_team)
                 st.session_state.eliminated_teams.append({
-                    'team': team,
+                    'team': bottom_team,
                     'round': st.session_state.round_number,
-                    'position': remaining - standings.index(team_data),
+                    'position': 4,
                     'phase': phase
                 })
+            
+            if eliminated_this_round:
+                st.session_state.news.insert(0, f"💀 SQUEEZED OUT: {bottom_team} eliminated!")
         
-        if eliminated_this_round:
-            st.session_state.news.insert(0, f"💀 PURGED: {', '.join(eliminated_this_round)} eliminated!")
-    
-    elif phase == "Phase 2: The Squeeze":
-        bottom_team = standings[-1]['Team']
-        if bottom_team in st.session_state.active_teams:
-            st.session_state.active_teams.remove(bottom_team)
-            eliminated_this_round.append(bottom_team)
-            st.session_state.eliminated_teams.append({
-                'team': bottom_team,
-                'round': st.session_state.round_number,
-                'position': 4,
-                'phase': phase
-            })
-        
-        if eliminated_this_round:
-            st.session_state.news.insert(0, f"💀 SQUEEZED OUT: {bottom_team} eliminated!")
-    
-    elif phase == "Phase 3: The Standoff":
-        if st.session_state.sudden_death_round >= 2:
-            leader = standings[0]['Team']
-            second = standings[1]['Team']
-            third = standings[2]['Team']
-            
-            match1_id = f"{second}v{third}_0"
-            match2_id = f"{third}v{second}_1"
-            
-            res1 = st.session_state.results.get(match1_id, [0, 0])
-            res2 = st.session_state.results.get(match2_id, [0, 0])
-            
-            second_goals = res1[0] + res2[1]
-            third_goals = res1[1] + res2[0]
-            
-            if second_goals > third_goals:
-                loser = third
-                winner = second
-            elif third_goals > second_goals:
-                loser = second
-                winner = third
-            else:
-                if len(res1) > 2 and len(res2) > 2:
-                    second_pens = res1[2] + res2[3]
-                    third_pens = res1[3] + res2[2]
-                    loser = third if second_pens > third_pens else second
-                    winner = second if second_pens > third_pens else third
+        elif phase == "Phase 3: The Standoff":
+            if st.session_state.sudden_death_round >= 2:
+                leader = standings[0]['Team']
+                second = standings[1]['Team']
+                third = standings[2]['Team']
+                
+                match1_id = f"{second}v{third}_0"
+                match2_id = f"{third}v{second}_1"
+                
+                res1 = st.session_state.results.get(match1_id, [0, 0])
+                res2 = st.session_state.results.get(match2_id, [0, 0])
+                
+                second_goals = res1[0] + res2[1]
+                third_goals = res1[1] + res2[0]
+                
+                if second_goals > third_goals:
+                    loser = third
+                    winner = second
+                elif third_goals > second_goals:
+                    loser = second
+                    winner = third
                 else:
-                    loser = third if standings[1]['Pts'] > standings[2]['Pts'] else second
-            
-            if loser in st.session_state.active_teams:
-                st.session_state.active_teams.remove(loser)
-                eliminated_this_round.append(loser)
-                st.session_state.eliminated_teams.append({
-                    'team': loser,
-                    'round': st.session_state.round_number,
-                    'position': 3,
-                    'phase': phase,
-                    'reason': 'Lost Sudden Death Semi-Final'
-                })
-                st.session_state.news.insert(0, f"💀 SUDDEN DEATH: {loser} eliminated! {winner} advances to Final!")
-            
-            st.session_state.sudden_death_round = 0
-            st.session_state.bye_team = None
-    
-    # Generate next round fixtures
-    next_fixtures = generate_fixtures_for_phase(st.session_state.active_teams, phase)
-    st.session_state.fixtures = next_fixtures
-    
-    # Update round info
-    st.session_state.round_number += 1
-    
-    if phase == "Phase 3: The Standoff" and not eliminated_this_round:
-        st.session_state.sudden_death_round += 1
-        if st.session_state.sudden_death_round == 1:
-            st.session_state.current_round = f"SUDDEN DEATH • Leg 1 • {phase}"
+                    if len(res1) > 2 and len(res2) > 2:
+                        second_pens = res1[2] + res2[3]
+                        third_pens = res1[3] + res2[2]
+                        loser = third if second_pens > third_pens else second
+                        winner = second if second_pens > third_pens else third
+                    else:
+                        loser = third if standings[1]['Pts'] > standings[2]['Pts'] else second
+                
+                if loser in st.session_state.active_teams:
+                    st.session_state.active_teams.remove(loser)
+                    eliminated_this_round.append(loser)
+                    st.session_state.eliminated_teams.append({
+                        'team': loser,
+                        'round': st.session_state.round_number,
+                        'position': 3,
+                        'phase': phase,
+                        'reason': 'Lost Sudden Death Semi-Final'
+                    })
+                    st.session_state.news.insert(0, f"💀 SUDDEN DEATH: {loser} eliminated! {winner} advances to Final!")
+                
+                st.session_state.sudden_death_round = 0
+                st.session_state.bye_team = None
+        
+        # Generate next round fixtures
+        next_fixtures = generate_fixtures_for_phase(st.session_state.active_teams, phase)
+        st.session_state.fixtures = next_fixtures
+        
+        # Update round info
+        st.session_state.round_number += 1
+        
+        if phase == "Phase 3: The Standoff" and not eliminated_this_round:
+            st.session_state.sudden_death_round += 1
+            if st.session_state.sudden_death_round == 1:
+                st.session_state.current_round = f"SUDDEN DEATH • Leg 1 • {phase}"
+            else:
+                st.session_state.current_round = f"SUDDEN DEATH • Leg 2 • {phase}"
         else:
-            st.session_state.current_round = f"SUDDEN DEATH • Leg 2 • {phase}"
-    else:
-        st.session_state.current_round = f"Round {st.session_state.round_number} • {phase}"
-    
-    # Reset match data for next round
-    st.session_state.results = {}
-    st.session_state.match_meta = {}
-    
-    # Log history
-    st.session_state.survival_history.append({
-        'round': st.session_state.round_number - 1,
-        'phase': phase,
-        'remaining': len(st.session_state.active_teams),
-        'eliminated': eliminated_this_round
-    })
-    
-    save_data_internal()
-    safe_rerun()
+            st.session_state.current_round = f"Round {st.session_state.round_number} • {phase}"
+        
+        # Reset match data for next round
+        st.session_state.results = {}
+        st.session_state.match_meta = {}
+        
+        # Log history
+        st.session_state.survival_history.append({
+            'round': st.session_state.round_number - 1,
+            'phase': phase,
+            'remaining': len(st.session_state.active_teams),
+            'eliminated': eliminated_this_round
+        })
+        
+        save_data_internal()
+        st.session_state.force_rerun = True
+        safe_rerun()
+        
+    except Exception as e:
+        st.error(f"Error in elimination: {str(e)}")
+        save_data_internal()
+        st.session_state.force_rerun = True
+        safe_rerun()
 
 def verify_data_consistency():
     """Check if cumulative stats match with recorded results"""
@@ -694,6 +715,11 @@ if 'data_loaded' not in st.session_state:
 
 init_defaults()
 
+# Check for forced rerun
+if st.session_state.get('force_rerun', False):
+    st.session_state.force_rerun = False
+    safe_rerun()
+
 # --- 🏆 HEADER ---
 st.markdown('<div class="big-title">DLS ULTRA</div>', unsafe_allow_html=True)
 
@@ -745,7 +771,7 @@ with st.sidebar:
 
         st.markdown("---")
         if st.session_state.started and not st.session_state.champion:
-            if st.button("⏩ EXECUTE ELIMINATION & NEXT ROUND", key="execute_elim_btn"): 
+            if st.button("⏩ EXECUTE ELIMINATION & NEXT ROUND", key="execute_elim_btn", use_container_width=True): 
                 st.toast("Processing Elimination...", icon="💀")
                 if "Survival" in st.session_state.format:
                     handle_battle_royale_elimination()
@@ -756,10 +782,10 @@ with st.sidebar:
         st.markdown("---")
         st.markdown("### 🐛 DEBUG TOOLS")
         
-        if st.button("🔄 Refresh Table View", key="refresh_view_btn"):
+        if st.button("🔄 Refresh Table View", key="refresh_view_btn", use_container_width=True):
             safe_rerun()
         
-        if st.button("📊 Show Current Cumulative Stats", key="show_stats_btn"):
+        if st.button("📊 Show Current Cumulative Stats", key="show_stats_btn", use_container_width=True):
             st.write("Cumulative Team Stats:")
             st.json(st.session_state.cumulative_stats)
             st.write("Cumulative Player Stats:")
@@ -767,14 +793,14 @@ with st.sidebar:
             st.write("Current Results:")
             st.json(st.session_state.results)
         
-        if st.button("🔍 Check Data Consistency", key="check_consistency_btn"):
+        if st.button("🔍 Check Data Consistency", key="check_consistency_btn", use_container_width=True):
             mismatches, recalculated = verify_data_consistency()
             if mismatches:
                 st.error(f"Found {len(mismatches)} mismatches!")
                 for m in mismatches:
                     st.write(f"{m['team']}: {m['key']} - Stored: {m['stored']}, Calculated: {m['calculated']}")
                 
-                if st.button("🔄 Fix All Mismatches", key="fix_mismatches_btn"):
+                if st.button("🔄 Fix All Mismatches", key="fix_mismatches_btn", use_container_width=True):
                     for team, stats in recalculated.items():
                         st.session_state.cumulative_stats[team] = stats
                     save_data_internal()
@@ -783,7 +809,7 @@ with st.sidebar:
             else:
                 st.success("All data is consistent! ✅")
         
-        if st.button("🧹 Clear All Stats & Start Over", key="clear_stats_btn"):
+        if st.button("🧹 Clear All Stats & Start Over", key="clear_stats_btn", use_container_width=True):
             st.session_state.cumulative_stats = {}
             st.session_state.cumulative_player_stats = {}
             for team in st.session_state.active_teams:
@@ -801,7 +827,7 @@ with st.sidebar:
         st.markdown("### ⚙️ TEAM EDITOR")
         new_team = st.text_input("REGISTER NEW CLUB", key="new_team_input")
         
-        if st.button("ADD CLUB", key="add_club_btn"):
+        if st.button("ADD CLUB", key="add_club_btn", use_container_width=True):
             if new_team and new_team not in st.session_state.teams:
                 st.session_state.teams.append(new_team)
                 st.session_state.team_badges[new_team] = random.choice(BADGE_POOL)
@@ -824,13 +850,13 @@ with st.sidebar:
         edit_target = st.selectbox("SELECT CLUB", ["Select..."] + st.session_state.teams, key="select_club_dropdown")
         if edit_target != "Select...":
             c1, c2 = st.columns(2)
-            if c1.button("🗑️ DELETE", key="delete_club_btn"):
+            if c1.button("🗑️ DELETE", key="delete_club_btn", use_container_width=True):
                 st.session_state.teams.remove(edit_target)
                 if edit_target in st.session_state.active_teams: st.session_state.active_teams.remove(edit_target)
                 save_data_internal()
                 safe_rerun()
             rename_val = c2.text_input("RENAME TO", value=edit_target, key="rename_input")
-            if c2.button("RENAME", key="rename_club_btn"):
+            if c2.button("RENAME", key="rename_club_btn", use_container_width=True):
                 idx = st.session_state.teams.index(edit_target)
                 st.session_state.teams[idx] = rename_val
                 st.session_state.team_badges[rename_val] = st.session_state.team_badges.pop(edit_target)
@@ -859,9 +885,9 @@ with st.sidebar:
             "sudden_death_round": st.session_state.sudden_death_round,
             "phase1_match_count": st.session_state.phase1_match_count
         })
-        st.download_button("📥 DOWNLOAD BACKUP", data=current_data, file_name="dls_backup.json", mime="application/json", key="download_backup_btn")
+        st.download_button("📥 DOWNLOAD BACKUP", data=current_data, file_name="dls_backup.json", mime="application/json", key="download_backup_btn", use_container_width=True)
         uploaded = st.file_uploader("📤 RESTORE BACKUP", type=['json'], key="upload_backup_widget")
-        if uploaded and st.button("⚠️ RESTORE NOW", key="restore_backup_btn"):
+        if uploaded and st.button("⚠️ RESTORE NOW", key="restore_backup_btn", use_container_width=True):
             data = json.load(uploaded)
             st.session_state.teams = data["teams"]
             st.session_state.fixtures = [tuple(f) for f in data["fixtures"]] if isinstance(data["fixtures"], list) else []
@@ -887,7 +913,7 @@ with st.sidebar:
             st.session_state.phase1_match_count = data.get("phase1_match_count", 2)
             save_data_internal()
             safe_rerun()
-        if st.button("🧨 FACTORY RESET", key="factory_reset_btn"):
+        if st.button("🧨 FACTORY RESET", key="factory_reset_btn", use_container_width=True):
             st.session_state.clear()
             if os.path.exists(DB_FILE): os.remove(DB_FILE)
             safe_rerun()
@@ -904,7 +930,7 @@ if not st.session_state.started:
     if st.session_state.admin_unlock: 
         st.markdown("### 🏆 SELECT FORMAT")
         fmt = st.radio("", ["Home & Away League", "World Cup (Groups + Knockout)", "Classic Knockout", "Survival Mode (Battle Royale)"], horizontal=True, key="format_radio")
-        if st.button("🚀 INITIALIZE SEASON", key="init_season_btn"):
+        if st.button("🚀 INITIALIZE SEASON", key="init_season_btn", use_container_width=True):
             if len(st.session_state.teams) < 2: st.error("Need 2+ Teams")
             else:
                 st.session_state.format = fmt
@@ -1136,7 +1162,7 @@ else:
                         hr = sc1.text_input("Red H", value=prev.get('h_r',''), key=f"rh_{mid}")
                         ar = sc2.text_input("Red A", value=prev.get('a_r',''), key=f"ra_{mid}")
                         
-                        if st.button("CONFIRM RESULT", key=f"b_{mid}"):
+                        if st.button("CONFIRM RESULT", key=f"b_{mid}", use_container_width=True):
                             # Store result
                             if (s1 == s2 and "League" not in st.session_state.format) or is_sudden_death:
                                 st.session_state.results[mid] = [s1, s2, p1, p2]
@@ -1364,3 +1390,8 @@ else:
 
 # --- FOOTER ---
 st.markdown("""<div class="footer">OFFICIAL DLS TOURNAMENT ENGINE <br> WRITTEN AND DESIGNED BY <span class="designer-name">OLUWATIMILEYIN IGBINLOLA</span></div>""", unsafe_allow_html=True)
+
+# Force rerun if needed - This is the key fix!
+if st.session_state.get('force_rerun', False):
+    st.session_state.force_rerun = False
+    safe_rerun()
